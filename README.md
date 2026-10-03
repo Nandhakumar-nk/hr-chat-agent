@@ -79,11 +79,43 @@ Tested behavior:
 - `get_employee_profile` and `get_holidays` both work as expected; `get_leave_balance` gives the same numbers as before, now from the database.
 - Interactive mode (step 3's context handling) still works unchanged after the restructure.
 
+## Step 5: RAG over the real HR policy PDF
+
+Through step 4, `search_hr_policy` was a stub: ~6 hardcoded snippets, keyword-matched. RAG (Retrieval-Augmented Generation) replaces that with real search over `docs/policies/leave-policy.pdf`:
+
+```text
+PDF → one Document per page
+    → RecursiveCharacterTextSplitter (chunks, page number kept)
+    → GoogleGenerativeAIEmbeddings (text → vector)
+    → Chroma (stores vectors, finds the closest ones to a query)
+```
+
+At indexing time, each chunk is embedded and stored. At query time, the *question* is embedded the same way, and the stored chunks whose vectors are closest ("most similar in meaning") are retrieved and handed to the model - so the model answers from real retrieved text, not a guess, and cites the page it came from.
+
+This is the first step with an external process dependency: **Chroma runs as a separate local server**, not embedded in the Node process. Start it once before running the app:
+
+```bash
+npx chroma run --path ./data/chroma   # start once, leave running
+node index.js "..."                    # in another terminal, as before
+```
+
+`src/rag/` does the indexing (`ensureIndexed()`, automatic on first run, same "fresh clone just works" idea as step 4's database) and retrieval (`retrieve(query, k)`), written directly against `pdf-parse` and the `chromadb` client rather than `@langchain/community`'s `PDFLoader`/`Chroma` wrappers - that package was deprecated/sunset by the LangChain team while building this step, with no replacement package yet, so this avoids depending on something already announced as unmaintained. `@langchain/textsplitters` and `@langchain/google-genai`'s embeddings are still used directly, unaffected by that deprecation.
+
+Citations are by **page number** (1–8), not a named section - the natural unit the pipeline works with, more robust than hand-parsing heading text out of extracted PDF output.
+
+Tested behavior: asked one question per policy area and checked the retrieved page and the final answer against the real PDF text:
+- "Can I carry forward my casual leave?" → page 6 (the FAQ), correctly: no.
+- "How does PL to EL conversion work with 11 days?" → page 3, correctly reproduces the policy's own worked example (7 retained, 4 converted → 2 EL).
+- "What is the maternity leave policy for adoption?" → page 5, accurate summary.
+- Stopping the Chroma server produces a clear "start it first: `npx chroma run ...`" message, not a raw stack trace.
+- Interactive mode (step 3) still works: a DB-backed question, then a RAG follow-up ("Can *that* be carried forward?") that depends on the earlier turn's context.
+
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env   # then put your Google AI API key in .env
+npx chroma run --path ./data/chroma   # start the vector DB server, leave it running
 ```
 
 ## Run
@@ -92,14 +124,16 @@ cp .env.example .env   # then put your Google AI API key in .env
 node index.js                                                    # interactive chat, with context across turns
 node index.js "Hi, who are you?"                                 # single-shot: no tool needed
 node index.js "What is my sick leave balance?"                   # single-shot: one tool selected
-node index.js "What is the earned leave carry forward and encashment rule?" # single-shot: policy lookup
+node index.js "What is the earned leave carry forward and encashment rule?" # single-shot: RAG policy search
 node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # single-shot: date calculation
-node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: all three tools, multi-tool reasoning
+node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: multiple tools, multi-tool reasoning
 ```
+
+(The Chroma server must already be running - see Setup - or you'll get a clear error telling you to start it.)
 
 ## Known limitations (next steps)
 
-- `search_hr_policy` is a stubbed keyword search over a few snippets, not real document search (RAG comes in step 5, see `CLAUDE.md` for the full roadmap).
 - No tool reads `leave_history` or distinguishes `active` vs `notice_period` status yet (eligibility logic comes in step 6).
 - The LLM fills in `employeeId` from the system prompt. In the real design it must come from the authenticated session, never from the model (step 7).
 - The interactive chat's message history is never trimmed, so a very long session would keep growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
+- Chroma must be started manually before running the app - it isn't auto-spawned, so the demo needs two terminals (or the server started ahead of time).

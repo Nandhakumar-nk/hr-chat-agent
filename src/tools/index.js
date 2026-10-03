@@ -7,6 +7,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
 import { getEmployee, getLeaveBalance, listHolidays } from "../db/repository.js";
+import { retrieve } from "../rag/index.js";
 
 const getLeaveBalanceTool = tool(
   async ({ employeeId }) => {
@@ -81,56 +82,22 @@ const calculateLeaveDaysTool = tool(
   }
 );
 
-// Stand-in for RAG (step 5): a few policy snippets, keyword-matched.
-const POLICY_SNIPPETS = [
-  {
-    keywords: ["casual", "cl"],
-    text: "Casual Leave (CL): 6 days per calendar year, credited 1.5 days per quarter. CL cannot be carried forward or encashed; unused CL lapses at the end of the calendar year.",
-  },
-  {
-    keywords: ["sick", "sl"],
-    text: "Sick Leave (SL): 6 days per calendar year, credited 1.5 days per quarter. SL cannot be carried forward or encashed; unused SL lapses at the end of the calendar year.",
-  },
-  {
-    keywords: ["earned", "el", "carry", "encash"],
-    text: "Earned Leave (EL): 12 days per calendar year, credited 3 days per quarter. Up to 8 unused EL days carry forward to the next year, capped at 20 days total. Up to 8 EL days per year may be encashed through payroll, once per calendar year.",
-  },
-  {
-    keywords: ["maternity"],
-    text: "Maternity Leave: eligible employees get 26 weeks of paid leave for the first or second child, 12 weeks for the third or later. Up to 8 weeks may be taken before the expected delivery date.",
-  },
-  {
-    keywords: ["paternity"],
-    text: "Paternity Leave: 5 days per delivery or adoption, for the first and second child only, to be taken within 4 weeks of the event.",
-  },
-  {
-    keywords: ["holiday", "weekend", "weekly off"],
-    text: "If a public holiday or weekly off falls within an approved leave period, that day is not counted as leave.",
-  },
-];
-
 const searchHRPolicyTool = tool(
   async ({ query }) => {
     console.log("\n🛠 search_hr_policy tool executed");
 
-    const normalized = query.toLowerCase();
-    const matches = POLICY_SNIPPETS.filter((snippet) =>
-      snippet.keywords.some((keyword) => normalized.includes(keyword))
-    );
+    const results = await retrieve(query, 3);
 
     return JSON.stringify({
       query,
-      results:
-        matches.length > 0
-          ? matches.map((m) => m.text)
-          : ["No matching policy snippet found for this stub. Real document search (RAG) comes in a later step."],
+      results: results.map((r) => ({ page: r.page, text: r.text })),
     });
   },
   {
     name: "search_hr_policy",
 
     description:
-      "Search HR leave policy text for rules about a topic (e.g. casual leave, sick leave, earned leave, maternity, paternity, holidays). This is a stubbed keyword search for now; it will be replaced with real document search (RAG) later.",
+      "Search the HR leave policy document for rules about a topic (e.g. casual leave, sick leave, earned leave, PL to EL conversion, maternity, paternity, holidays). Returns the most relevant passages from the real policy PDF, each with the page number it came from - cite the page in your answer.",
 
     schema: z.object({
       query: z.string(),
