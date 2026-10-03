@@ -1,2 +1,7 @@
 .env
 node_modules/
+
+# Original internal HR documents (only cleaned copies are committed)
+docs/policies/*.pdf
+!docs/policies/leave-policy.pdf
+!docs/policies/holiday-list-2026.pdf
