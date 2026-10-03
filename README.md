@@ -110,6 +110,28 @@ Tested behavior: asked one question per policy area and checked the retrieved pa
 - Stopping the Chroma server produces a clear "start it first: `npx chroma run ...`" message, not a raw stack trace.
 - Interactive mode (step 3) still works: a DB-backed question, then a RAG follow-up ("Can *that* be carried forward?") that depends on the earlier turn's context.
 
+## Step 6: LangGraph, and a check_leave_eligibility tool
+
+Through step 5, `runAgentTurn` was a hand-written loop: call the model, run any requested tools, call the model again, repeat until there are no more tool calls. LangGraph doesn't add new capability here - it gives that exact shape a name and an explicit structure: a **graph** of **nodes** (steps that transform state) connected by **edges** (what runs next):
+
+```text
+agent node   -> call the model (same as before)
+tools node   -> run whatever tools were requested (same toolsByName lookup as before)
+conditional edge after "agent": tool calls requested? -> tools   no more? -> END
+edge "tools" -> "agent": closes the loop
+```
+
+The tool-running code in the `tools` node is still our own (not LangGraph's prebuilt `ToolNode`) - only the *control flow* moved from a loop to a graph; nothing about *how* tools run is hidden. `src/chat.js` didn't change at all: `runAgentTurn(messages)` kept its exact signature.
+
+**New tool: `check_leave_eligibility`.** Before adding it, we tested whether the agent could already reason its way to a correct eligibility answer using just the existing tools (`get_employee_profile` + `get_leave_balance` + `calculate_leave_days`) - asking 5 times whether a `notice_period` employee (EMP003, seeded in step 4) could take casual leave they had enough balance for. **2 of 5 runs were wrong**: the model never called `get_employee_profile`, so it never learned about the notice-period restriction, and confidently said yes. The other 3 runs got it right - so the model *knows* the rule when it checks, it just doesn't reliably *think to* check. `check_leave_eligibility` makes that check unconditional: it looks up employment status, blocks CL/SL/EL/PL outright if the employee is on notice period (regardless of balance, per policy), otherwise compares the requested working days against the real balance - deterministic every time, not dependent on the model remembering to look something up.
+
+Tested behavior:
+- The same EMP003 question, repeated: now correctly "not eligible, serving notice period" every time.
+- A within-balance request for the authenticated employee: correctly "eligible."
+- An over-balance request: correctly "not eligible," citing the exact shortfall.
+- The model picks `check_leave_eligibility` on its own for eligibility-shaped questions ("do I have enough balance for X"), and still combines it with `search_hr_policy`/`calculate_leave_days` when a question also asks about policy or day counts.
+- Steps 1–5's existing questions (single-tool, 3-tool compound, RAG, interactive context handling) all still work unchanged through the new graph.
+
 ## Setup
 
 ```bash

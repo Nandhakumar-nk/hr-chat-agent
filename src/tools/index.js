@@ -38,29 +38,35 @@ const getLeaveBalanceTool = tool(
   }
 );
 
+// Shared by calculate_leave_days and check_leave_eligibility: the working
+// days in [startDate, endDate], inclusive, skipping weekends and public
+// holidays from the holidays table.
+function countWorkingDays(startDate, endDate) {
+  const holidayDates = new Set(listHolidays().map((h) => h.date));
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  let workingDays = 0;
+  for (
+    let day = new Date(start);
+    day <= end;
+    day.setDate(day.getDate() + 1)
+  ) {
+    const weekday = day.getDay(); // 0 = Sunday, 6 = Saturday
+    const isoDate = day.toISOString().slice(0, 10);
+    if (weekday !== 0 && weekday !== 6 && !holidayDates.has(isoDate)) {
+      workingDays++;
+    }
+  }
+  return workingDays;
+}
+
 const calculateLeaveDaysTool = tool(
   async ({ startDate, endDate }) => {
     console.log("\n🛠 calculate_leave_days tool executed");
 
-    // Count the working days in [startDate, endDate], inclusive, skipping
-    // weekends and public holidays from the holidays table.
-    const holidayDates = new Set(listHolidays().map((h) => h.date));
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    let workingDays = 0;
-    for (
-      let day = new Date(start);
-      day <= end;
-      day.setDate(day.getDate() + 1)
-    ) {
-      const weekday = day.getDay(); // 0 = Sunday, 6 = Saturday
-      const isoDate = day.toISOString().slice(0, 10);
-      if (weekday !== 0 && weekday !== 6 && !holidayDates.has(isoDate)) {
-        workingDays++;
-      }
-    }
+    const workingDays = countWorkingDays(startDate, endDate);
 
     return JSON.stringify({
       startDate,
@@ -149,6 +155,75 @@ const getHolidaysTool = tool(
   }
 );
 
+// Maps a requested leave type onto its column in leave_balances.
+const LEAVE_TYPE_TO_BALANCE_FIELD = {
+  CL: "casual_leave",
+  SL: "sick_leave",
+  EL: "earned_leave",
+  PL: "privilege_leave",
+};
+
+const checkLeaveEligibilityTool = tool(
+  async ({ employeeId, leaveType, startDate, endDate }) => {
+    console.log("\n🛠 check_leave_eligibility tool executed");
+
+    const employee = getEmployee(employeeId);
+    if (!employee) {
+      return JSON.stringify({ error: `No employee found with id ${employeeId}` });
+    }
+
+    const requestedDays = countWorkingDays(startDate, endDate);
+
+    // Per policy (leave-policy.pdf, section 5): employees serving notice
+    // period cannot take CL, SL, EL or PL, regardless of balance. This
+    // check is why this tool exists - left to its own judgment, the model
+    // doesn't reliably remember to look up employment status (see
+    // CLAUDE.md's "Current limitations" / the plan's tested evidence).
+    if (employee.status === "notice_period") {
+      return JSON.stringify({
+        eligible: false,
+        reason: `Employee is serving notice period; ${leaveType} cannot be availed during notice period, regardless of balance.`,
+        leaveType,
+        requestedDays,
+        employeeStatus: employee.status,
+      });
+    }
+
+    const balance = getLeaveBalance(employeeId);
+    if (!balance) {
+      return JSON.stringify({ error: `No leave balance found for employee ${employeeId}` });
+    }
+
+    const balanceField = LEAVE_TYPE_TO_BALANCE_FIELD[leaveType];
+    const availableBalance = balance[balanceField];
+    const eligible = requestedDays <= availableBalance;
+
+    return JSON.stringify({
+      eligible,
+      reason: eligible
+        ? `Sufficient ${leaveType} balance for the requested ${requestedDays} day(s).`
+        : `Requested ${requestedDays} day(s) exceeds available ${leaveType} balance of ${availableBalance}.`,
+      leaveType,
+      requestedDays,
+      availableBalance,
+      employeeStatus: employee.status,
+    });
+  },
+  {
+    name: "check_leave_eligibility",
+
+    description:
+      "Check whether an employee is eligible to take a specific type of leave over a date range. Combines employment status (notice period blocks all leave), the leave balance, and the working-day count into one eligibility verdict with a reason. Use this for any question asking whether leave 'can' be taken, not just the balance or the day count alone.",
+
+    schema: z.object({
+      employeeId: z.string(),
+      leaveType: z.enum(["CL", "SL", "EL", "PL"]),
+      startDate: z.string().describe("Start date, format YYYY-MM-DD"),
+      endDate: z.string().describe("End date, format YYYY-MM-DD"),
+    }),
+  }
+);
+
 // Name -> tool, so adding a new tool is a one-line change here and in
 // agent.js's bindTools - no extra `if` branches needed.
 export const toolsByName = {
@@ -157,4 +232,5 @@ export const toolsByName = {
   search_hr_policy: searchHRPolicyTool,
   get_employee_profile: getEmployeeProfileTool,
   get_holidays: getHolidaysTool,
+  check_leave_eligibility: checkLeaveEligibilityTool,
 };
