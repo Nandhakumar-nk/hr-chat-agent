@@ -1,5 +1,6 @@
 .env
 node_modules/
+data/
 
 # Original internal HR documents (only cleaned copies are committed)
 docs/policies/*.pdf

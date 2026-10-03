@@ -12,14 +12,14 @@ This is the developer's first agent-building project, and they are learning as t
 
 - Build in small steps. Each step adds one new concept, runs end to end, and gets its own commit and README section.
 - Before coding a step, explain the concept and why it's needed. After it runs, show the observed behavior, such as the `tool_calls` the model chose, and point out what is still missing.
-- Keep code readable and heavily commented, in the numbered-section style of `index.js`. Prefer plain LangChain JS over abstractions that hide the tool-calling loop. Use LangGraph or extra agents only when a step needs them.
+- Keep code readable and heavily commented. Prefer plain LangChain JS over abstractions that hide the tool-calling loop. Use LangGraph or extra agents only when a step needs them.
 - Don't jump ahead. Finish the current step, then propose the next one from the roadmap and let the developer choose.
 
 Roadmap toward the assessment (deadline Tue Oct 6, 1 PM; deliverables are a public GitHub repo, a demo video and architecture docs). It is judged on implementation, agentic approach, framework usage, tool integration, architecture and completeness:
 1. One agent, one tool (`get_leave_balance`). Done.
 2. Several tools (`calculate_leave_days` for working days in a date range, `search_hr_policy` with stubbed text for now), with the model choosing between them and a loop that runs until there are no more tool calls. Done.
 3. Context handling: keep the message history across turns in an interactive CLI chat, so follow-ups like "what about 7 days?" work. Done.
-4. A SQL database (SQLite) for employees, leave balances, leave history and holidays. Add tools such as `get_employee_profile` and `get_holidays`.
+4. A SQL database (SQLite) for employees, leave balances, leave history and holidays. Add tools such as `get_employee_profile` and `get_holidays`. Done.
 5. RAG over the HR policy documents in `docs/policies/`: chunk, embed, retrieve, and cite the source section in answers.
 6. Move to LangGraph JS. Rebuild the hand-written loop as a graph, now that the loop is understood, and add a `check_leave_eligibility` tool that combines balance, policy rules and date calculation.
 7. Authentication: the employee ID comes from the session and never from the LLM. Requesting another employee's data must fail, and the demo shows this.
@@ -45,24 +45,32 @@ Policy rules the tools must implement, not just retrieve:
 ```bash
 npm install
 cp .env.example .env              # set GOOGLE_API_KEY (and optionally GEMINI_MODEL)
-node index.js                     # default question: "How many leaves do I have?"
-node index.js "<question>"        # ask any question; npm start runs the default
+node index.js                     # interactive chat, context kept across turns
+node index.js "<question>"        # single-shot: ask one question and exit
 ```
 
-There are no tests, linter or build step. To verify a change, run `index.js` with questions that should and shouldn't trigger a tool. The README lists sample questions.
+There are no tests, linter or build step. To verify a change, run `index.js` with questions that should and shouldn't trigger a tool, in both modes. The README lists sample questions. The Google AI free tier caps a model at 20 requests/day; if you hit a `429`, rerun with `GEMINI_MODEL=gemini-3.5-flash-lite` (a separate quota) rather than waiting out the reset.
 
 ## Architecture
 
-- Everything is in `index.js`, an ES module (`"type": "module"`) that uses top-level `await`.
-- The flow is a single tool-calling round:
-  1. A tool is defined with `tool()` from `@langchain/core/tools` and a Zod schema.
-  2. `ChatGoogleGenerativeAI` gets the tool through `bindTools`.
-  3. The app runs each requested `tool_call`, appends a `ToolMessage` with the matching `tool_call_id`, and invokes the model again. If no tool was called, the first response is the answer.
-- Tool execution is dispatched by `toolCall.name` with an `if`. A new tool must be added to both the `bindTools` list and that dispatch.
+The code is layered, each layer only talking to the one below it:
+
+```text
+index.js            entry point: single-shot vs interactive, nothing else
+src/chat.js          presentation: the two CLI modes (node:readline)
+src/agent.js         orchestration: the model, bindTools, the runAgentTurn loop
+src/tools/index.js   business logic: the tool definitions
+src/db/              data access: schema.sql, seed.js, connection.js, repository.js
+```
+
+- Tools never touch the database directly - they call functions in `src/db/repository.js`. `src/db/connection.js` opens/creates `data/hr.sqlite` (gitignored) and seeds it from `src/db/seed.js` only when `employees` is empty, so re-running never duplicates data.
+- `runAgentTurn(messages)` in `src/agent.js` is the whole tool-calling loop: ask the model, run any requested tools (via a `toolsByName` map in `src/tools/index.js` - a new tool is a one-line addition there, no `if` chain), append results, ask again, until no more tool calls. It mutates `messages` in place, which is what lets `src/chat.js`'s interactive mode keep conversation context across turns (step 3) by reusing the same array.
 - The model never gets keyword routing. It picks tools from their name, description and schema, so write those carefully.
 - The model is chosen with `GEMINI_MODEL`, defaulting to `gemini-3.8-flash`. `GOOGLE_API_KEY` is read from `.env` by `dotenv`, and `.env` is gitignored.
+- `src/tools/index.js` is one file because there are only 5 small tools. Split it (e.g. one file per tool) once step 6 adds more and it gets unwieldy - don't do that split pre-emptively.
+- Uses `node:sqlite` and `node:readline`, both built into Node.js - avoid adding a dependency for something the runtime already provides.
 
 ## Current limitations
 
-- Leave data in `get_leave_balance` is hardcoded and uses the wrong leave types (casual 5, sick 8, no EL or PL). Fix this to match the policy in step 2 or 4.
-- The employee ID (`EMP001`) is in the system prompt, and the LLM fills it into tool args. In the target design it must come from the authenticated session, never from the model.
+- The employee ID (`EMP001`) is in the system prompt, and the LLM fills it into tool args. In the target design it must come from the authenticated session, never from the model (step 7).
+- `leave_history` is seeded but no tool reads it yet, and `employees.status` (active/notice_period) isn't checked by any tool yet (step 6: eligibility).

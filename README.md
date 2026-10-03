@@ -54,6 +54,31 @@ HR Agent: Your current sick leave balance is 6 days.
 ```
 "What about sick leave?" is ambiguous on its own - about the balance? the policy? something else? Because the earlier turn is still in `messages`, the model resolves it as a follow-up to the balance question, without the user having to repeat "what is my ... balance".
 
+## Step 4: a real database, and code organized into layers
+
+Through step 3, every tool returned hardcoded data, and all the code lived in one `index.js`. That was fine for three small functions, but a database brings its own concerns (schema, seeding, queries) that don't belong mixed into the model/CLI code. So this step does two things together: adds SQLite, and splits the code into layers, each only talking to the one below it:
+
+```text
+index.js            entry point: single-shot vs interactive, nothing else
+src/chat.js          presentation: the two CLI modes (readline)
+src/agent.js         orchestration: the model, bindTools, the runAgentTurn loop
+src/tools/index.js   business logic: the 5 tool definitions
+src/db/              data access: schema, seed data, connection, queries
+```
+
+The database uses `node:sqlite`, built into Node.js - no new dependency, same reasoning as step 3's `readline`. `src/db/connection.js` creates `data/hr.sqlite` on first run, applies `schema.sql`, and seeds it from `src/db/seed.js` (only if empty, so re-running never duplicates data). `data/` is gitignored - the database is cheap to rebuild from code, so a fresh clone just works with `npm install`.
+
+What changed:
+- `get_leave_balance` now queries the `leave_balances` table instead of returning hardcoded JSON.
+- `calculate_leave_days` now excludes public holidays (from the `holidays` table) as well as weekends.
+- Two new tools: `get_employee_profile` and `get_holidays`.
+- Seeded data: 3 fictitious employees (richer data for later steps - no new tool uses EMP002/EMP003 yet), their leave balances, a few sample `leave_history` rows (not read by any tool yet, but seeded now to avoid a schema change later), and all 12 holidays from `docs/policies/holiday-list-2026.pdf`.
+
+Tested behavior:
+- `calculate_leave_days` on a range that includes Ayudha Poojai (Monday 19-Oct-2026, a weekday holiday) now correctly returns 5 working days for Oct 12–19, not 6 - proof the holiday list is actually being excluded, not just weekends.
+- `get_employee_profile` and `get_holidays` both work as expected; `get_leave_balance` gives the same numbers as before, now from the database.
+- Interactive mode (step 3's context handling) still works unchanged after the restructure.
+
 ## Setup
 
 ```bash
@@ -74,9 +99,7 @@ node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I h
 
 ## Known limitations (next steps)
 
-- Leave data is hardcoded; it will move to a database (step 4).
-- `calculate_leave_days` excludes weekends but not public holidays yet; that needs the holiday list in the database (step 4).
 - `search_hr_policy` is a stubbed keyword search over a few snippets, not real document search (RAG comes in step 5, see `CLAUDE.md` for the full roadmap).
-- The LLM fills in `employeeId` from the system prompt. In the real design it must come from the authenticated session, never from the model.
+- No tool reads `leave_history` or distinguishes `active` vs `notice_period` status yet (eligibility logic comes in step 6).
+- The LLM fills in `employeeId` from the system prompt. In the real design it must come from the authenticated session, never from the model (step 7).
 - The interactive chat's message history is never trimmed, so a very long session would keep growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
-- There's no conversation memory yet — each run is a single turn, so follow-up questions don't have context (step 3).
