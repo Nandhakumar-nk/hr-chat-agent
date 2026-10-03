@@ -18,7 +18,7 @@ This is the developer's first agent-building project, and they are learning as t
 Roadmap toward the assessment (deadline Tue Oct 6, 1 PM; deliverables are a public GitHub repo, a demo video and architecture docs). It is judged on implementation, agentic approach, framework usage, tool integration, architecture and completeness:
 1. One agent, one tool (`get_leave_balance`). Done.
 2. Several tools (`calculate_leave_days` for working days in a date range, `search_hr_policy` with stubbed text for now), with the model choosing between them and a loop that runs until there are no more tool calls. Done.
-3. Context handling: keep the message history across turns in an interactive CLI chat, so follow-ups like "what about 7 days?" work.
+3. Context handling: keep the message history across turns in an interactive CLI chat, so follow-ups like "what about 7 days?" work. Done.
 4. A SQL database (SQLite) for employees, leave balances, leave history and holidays. Add tools such as `get_employee_profile` and `get_holidays`.
 5. RAG over the HR policy documents in `docs/policies/`: chunk, embed, retrieve, and cite the source section in answers.
 6. Move to LangGraph JS. Rebuild the hand-written loop as a graph, now that the loop is understood, and add a `check_leave_eligibility` tool that combines balance, policy rules and date calculation.

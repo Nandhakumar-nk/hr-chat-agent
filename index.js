@@ -1,5 +1,6 @@
 import "dotenv/config";
 
+import { createInterface } from "node:readline/promises";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { tool } from "@langchain/core/tools";
 import { ToolMessage } from "@langchain/core/messages";
@@ -157,17 +158,10 @@ const model = new ChatGoogleGenerativeAI({
 const modelWithTools = model.bindTools(Object.values(toolsByName));
 
 // -------------------------
-// 4. User question
+// 4. System prompt
 // -------------------------
 
-// Pass a question on the command line to experiment:
-//   node index.js "What is my sick leave balance?"
-const question = process.argv[2] ?? "How many leaves do I have?";
-
-const messages = [
-  {
-    role: "system",
-    content: `
+const SYSTEM_PROMPT = `
 You are an HR assistant.
 
 The authenticated employee ID is EMP001.
@@ -176,50 +170,113 @@ Use the available tools whenever employee-specific
 information, leave policy rules, or date calculations
 are required. You may call more than one tool, one
 after another, if the question needs it.
-`,
-  },
-  {
-    role: "user",
-    content: question,
-  },
-];
-
-console.log(`\nYou: ${question}`);
+`;
 
 // -------------------------
-// 5. Agent loop: ask -> run any requested tools -> ask again,
-//    until the model stops calling tools.
+// 5. Agent loop for one user turn: ask -> run any requested
+//    tools -> ask again, until the model stops calling tools.
+//
+//    `messages` is mutated in place (the caller's array grows
+//    with this turn's user message, any tool calls/results, and
+//    the final answer), so the same array can be reused across
+//    turns to keep the whole conversation in context.
 // -------------------------
 
-let response = await modelWithTools.invoke(messages);
+async function runAgentTurn(messages) {
+  let response = await modelWithTools.invoke(messages);
 
-while (response.tool_calls?.length) {
-  console.log("\nLLM decision:");
-  console.log(response.tool_calls);
+  while (response.tool_calls?.length) {
+    console.log("\nLLM decision:");
+    console.log(response.tool_calls);
 
-  messages.push(response);
+    messages.push(response);
 
-  for (const toolCall of response.tool_calls) {
-    const toolToRun = toolsByName[toolCall.name];
-    const result = await toolToRun.invoke(toolCall.args);
+    for (const toolCall of response.tool_calls) {
+      const toolToRun = toolsByName[toolCall.name];
+      const result = await toolToRun.invoke(toolCall.args);
 
-    console.log("\nTool result:");
-    console.log(result);
+      console.log("\nTool result:");
+      console.log(result);
 
-    messages.push(
-      new ToolMessage({
-        content: result,
-        tool_call_id: toolCall.id,
-      })
-    );
+      messages.push(
+        new ToolMessage({
+          content: result,
+          tool_call_id: toolCall.id,
+        })
+      );
+    }
+
+    response = await modelWithTools.invoke(messages);
   }
 
-  response = await modelWithTools.invoke(messages);
+  messages.push(response);
+  return response;
 }
 
 // -------------------------
-// 6. Final answer
+// 6a. Single-shot mode: node index.js "question"
+//     Asks one question and exits. Handy for quick, scripted
+//     tests that don't burn through a whole chat session.
 // -------------------------
 
-console.log("\nHR Agent:");
-console.log(response.text);
+async function runSingleShot(question) {
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: question },
+  ];
+
+  console.log(`\nYou: ${question}`);
+
+  const response = await runAgentTurn(messages);
+
+  console.log("\nHR Agent:");
+  console.log(response.text);
+}
+
+// -------------------------
+// 6b. Interactive chat mode: node index.js (no argument)
+//     Keeps one `messages` array for the whole session, so
+//     later turns can refer back to earlier ones (context
+//     handling) - e.g. "What about sick leave?" after already
+//     asking about casual leave.
+// -------------------------
+
+async function runInteractiveChat() {
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }];
+
+  console.log("HR Chat Agent - type your question, or 'exit' to quit.\n");
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+  while (true) {
+    const question = (await rl.question("You: ")).trim();
+
+    if (!question || ["exit", "quit"].includes(question.toLowerCase())) {
+      break;
+    }
+
+    messages.push({ role: "user", content: question });
+
+    const response = await runAgentTurn(messages);
+
+    console.log("\nHR Agent:");
+    console.log(response.text, "\n");
+  }
+
+  rl.close();
+}
+
+// -------------------------
+// 7. Entry point
+// -------------------------
+
+// Pass a question on the command line for a quick single-shot test:
+//   node index.js "What is my sick leave balance?"
+// Run with no arguments for an interactive, context-aware chat.
+const question = process.argv[2];
+
+if (question) {
+  await runSingleShot(question);
+} else {
+  await runInteractiveChat();
+}

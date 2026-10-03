@@ -34,6 +34,26 @@ Tested behavior:
 
 **Note on free-tier rate limits:** the Google AI free tier allows only 20 requests/day per model. If you see a `429` quota error, either wait for the daily reset or point `GEMINI_MODEL` at a different model (for example `gemini-3.5-flash-lite`), which has its own separate quota.
 
+## Step 3: context handling
+
+An LLM call has no memory of its own — the only thing it "knows" is whatever is in the `messages` array sent with that call. Steps 1–2 rebuilt that array from scratch for a single question each run, so there was nothing to follow up on.
+
+`index.js` now has two modes:
+- **`node index.js "question"`** — unchanged single-shot mode from steps 1–2, still handy for quick, scripted tests.
+- **`node index.js`** (no argument) — an interactive chat. It keeps one `messages` array for the whole session: each turn's question and answer (and any tool calls in between) stay in that array, so later turns can refer back to earlier ones. Type `exit` or `quit` to end the session.
+
+The tool-calling loop from step 2 (ask → run tools → ask again until no more tool calls) is unchanged; it's now wrapped in a `runAgentTurn(messages)` function that both modes call, once per turn.
+
+Tested behavior (interactive mode):
+```text
+You: What is my casual leave balance?
+HR Agent: Your current casual leave balance is 4.5 days.
+
+You: What about sick leave?
+HR Agent: Your current sick leave balance is 6 days.
+```
+"What about sick leave?" is ambiguous on its own - about the balance? the policy? something else? Because the earlier turn is still in `messages`, the model resolves it as a follow-up to the balance question, without the user having to repeat "what is my ... balance".
+
 ## Setup
 
 ```bash
@@ -44,12 +64,12 @@ cp .env.example .env   # then put your Google AI API key in .env
 ## Run
 
 ```bash
-node index.js                                                    # "How many leaves do I have?"
-node index.js "Hi, who are you?"                                 # no tool needed
-node index.js "What is my sick leave balance?"                   # one tool selected
-node index.js "What is the earned leave carry forward and encashment rule?" # policy lookup
-node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # date calculation
-node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # all three tools, multi-tool reasoning
+node index.js                                                    # interactive chat, with context across turns
+node index.js "Hi, who are you?"                                 # single-shot: no tool needed
+node index.js "What is my sick leave balance?"                   # single-shot: one tool selected
+node index.js "What is the earned leave carry forward and encashment rule?" # single-shot: policy lookup
+node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # single-shot: date calculation
+node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: all three tools, multi-tool reasoning
 ```
 
 ## Known limitations (next steps)
@@ -58,4 +78,5 @@ node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I h
 - `calculate_leave_days` excludes weekends but not public holidays yet; that needs the holiday list in the database (step 4).
 - `search_hr_policy` is a stubbed keyword search over a few snippets, not real document search (RAG comes in step 5, see `CLAUDE.md` for the full roadmap).
 - The LLM fills in `employeeId` from the system prompt. In the real design it must come from the authenticated session, never from the model.
+- The interactive chat's message history is never trimmed, so a very long session would keep growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
 - There's no conversation memory yet — each run is a single turn, so follow-up questions don't have context (step 3).
