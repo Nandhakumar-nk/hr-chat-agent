@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { login, setToken, type Employee } from "./api";
+import { Logo } from "./Logo";
 
 export function Login({ onLogin }: { onLogin: (employee: Employee) => void }) {
   const [employeeId, setEmployeeId] = useState("");
@@ -24,7 +25,10 @@ export function Login({ onLogin }: { onLogin: (employee: Employee) => void }) {
 
   return (
     <div className="login">
-      <h1>HR Chat Agent</h1>
+      <div className="login-brand">
+        <Logo size={56} />
+        <h1>HR Chat Agent</h1>
+      </div>
       <form onSubmit={handleSubmit}>
         <label>
           Employee ID

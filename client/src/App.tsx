@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Login } from "./Login";
-import { Chat } from "./Chat";
+import { Dashboard } from "./Dashboard";
 import { me, getToken, clearToken, type Employee } from "./api";
 import "./App.css";
 
@@ -32,7 +32,7 @@ export default function App() {
   }
 
   return employee ? (
-    <Chat employee={employee} onLogout={handleLogout} />
+    <Dashboard employee={employee} onLogout={handleLogout} />
   ) : (
     <Login onLogin={setEmployee} />
   );

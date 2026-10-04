@@ -22,11 +22,20 @@ export interface ChatMessage {
   toolActivity?: ToolActivityEntry[];
 }
 
-// Unset -> "" -> fetch("/api/login") etc. stay relative, resolving
-// against whatever origin served this page (the dev proxy, or
-// server.js serving client/dist - today's two modes, unchanged). Set at
-// build time to point a separately-deployed frontend at a backend
-// running on a different origin entirely.
+export interface LeaveBalance {
+  casualLeave: number;
+  sickLeave: number;
+  earnedLeave: number;
+  privilegeLeave: number;
+}
+
+export interface Holiday {
+  date: string;
+  name: string;
+}
+
+// Base URL of the API - see client/.env.example. Required in every mode
+// (dev, preview, deployed); there's no same-origin fallback.
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 const TOKEN_KEY = "hr-chat-token";
@@ -71,6 +80,17 @@ export async function login(
 export async function me(): Promise<Employee> {
   const res = await fetch(`${API_BASE}/api/me`, { headers: authHeaders() });
   return parseOrThrow(res);
+}
+
+export async function getLeaveBalance(): Promise<LeaveBalance> {
+  const res = await fetch(`${API_BASE}/api/leave-balance`, { headers: authHeaders() });
+  return parseOrThrow(res);
+}
+
+export async function getHolidays(): Promise<Holiday[]> {
+  const res = await fetch(`${API_BASE}/api/holidays`, { headers: authHeaders() });
+  const data = await parseOrThrow(res);
+  return data.holidays;
 }
 
 export async function sendMessage(

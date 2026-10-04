@@ -1,14 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { sendMessage, type Employee, type ChatMessage } from "./api";
+import { sendMessage, type ChatMessage } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
+import { Markdown } from "./Markdown";
 
-export function Chat({
-  employee,
-  onLogout,
-}: {
-  employee: Employee;
-  onLogout: () => void;
-}) {
+// The message list + input only - no header/logout here. Used inside
+// ChatAssistant's drawer or full-page wrapper, which owns its own
+// header and the open/closed/maximized state.
+export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,22 +34,15 @@ export function Chat({
 
   return (
     <div className="chat">
-      <header>
-        <span>
-          Logged in as <strong>{employee.name}</strong> ({employee.id})
-        </span>
-        <button className="logout" onClick={onLogout}>
-          Log out
-        </button>
-      </header>
-
       <div className="messages">
         {messages.length === 0 && (
           <p className="hint">Ask about your leave balance, policy, or eligibility.</p>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
-            <div className="bubble">{m.text}</div>
+            <div className="bubble">
+              {m.role === "agent" ? <Markdown>{m.text}</Markdown> : m.text}
+            </div>
             {m.role === "agent" && m.toolActivity && <ActivityPanel activity={m.toolActivity} />}
           </div>
         ))}

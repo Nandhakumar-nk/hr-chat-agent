@@ -7,7 +7,7 @@ import { Router } from "express";
 import { login, requireAuth } from "./auth.js";
 import { getConversation } from "./conversations.js";
 import { getCurrentEmployeeId } from "../session.js";
-import { getEmployee } from "../db/repository.js";
+import { getEmployee, getLeaveBalance, listHolidays } from "../db/repository.js";
 import { runAgentTurn } from "../agent.js";
 
 export const router = Router();
@@ -44,6 +44,27 @@ router.get("/me", requireAuth, (req, res) => {
     department: employee.department,
     status: employee.status,
   });
+});
+
+// Direct data reads for dashboard cards - no LLM round-trip, same
+// reasoning as calculate_leave_days not asking the model to count days
+// itself. employeeId still comes only from the session (requireAuth),
+// never a request parameter.
+router.get("/leave-balance", requireAuth, (req, res) => {
+  const balance = getLeaveBalance(getCurrentEmployeeId());
+  if (!balance) {
+    return res.status(404).json({ error: "No leave balance found." });
+  }
+  res.json({
+    casualLeave: balance.casual_leave,
+    sickLeave: balance.sick_leave,
+    earnedLeave: balance.earned_leave,
+    privilegeLeave: balance.privilege_leave,
+  });
+});
+
+router.get("/holidays", requireAuth, (req, res) => {
+  res.json({ holidays: listHolidays() });
 });
 
 router.post("/chat", requireAuth, async (req, res) => {
