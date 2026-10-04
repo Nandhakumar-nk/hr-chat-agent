@@ -7,6 +7,11 @@
 // EMP002/EMP003 are extra fictitious employees - richer seed data for
 // later steps (e.g. step 7's authorization checks), not used by any
 // tool yet.
+//
+// `password` is a demo-only login credential (src/session.js), not real
+// security - it exists to show the ID-from-session architectural
+// principle in a CLI, not to protect anything. Real session/token
+// handling is step 8's job, once there's an actual HTTP boundary.
 
 export const employees = [
   {
@@ -15,6 +20,7 @@ export const employees = [
     department: "Engineering",
     dateOfJoining: "2023-06-12",
     status: "active",
+    password: "asha123",
   },
   {
     id: "EMP002",
@@ -22,6 +28,7 @@ export const employees = [
     department: "Design",
     dateOfJoining: "2021-02-01",
     status: "active",
+    password: "vikram123",
   },
   {
     id: "EMP003",
@@ -29,6 +36,7 @@ export const employees = [
     department: "Sales",
     dateOfJoining: "2024-11-20",
     status: "notice_period",
+    password: "priya123",
   },
 ];
 

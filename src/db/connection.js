@@ -29,10 +29,10 @@ function seedIfEmpty() {
   }
 
   const insertEmployee = db.prepare(
-    "INSERT INTO employees (id, name, department, date_of_joining, status) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO employees (id, name, department, date_of_joining, status, password) VALUES (?, ?, ?, ?, ?, ?)"
   );
   for (const e of employees) {
-    insertEmployee.run(e.id, e.name, e.department, e.dateOfJoining, e.status);
+    insertEmployee.run(e.id, e.name, e.department, e.dateOfJoining, e.status, e.password);
   }
 
   const insertBalance = db.prepare(

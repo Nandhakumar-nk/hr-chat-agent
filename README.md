@@ -132,6 +132,18 @@ Tested behavior:
 - The model picks `check_leave_eligibility` on its own for eligibility-shaped questions ("do I have enough balance for X"), and still combines it with `search_hr_policy`/`calculate_leave_days` when a question also asks about policy or day counts.
 - Steps 1–5's existing questions (single-tool, 3-tool compound, RAG, interactive context handling) all still work unchanged through the new graph.
 
+## Step 7: authentication - the employee ID comes from the session, never the LLM
+
+Through step 6, every self-service tool (`get_leave_balance`, `get_employee_profile`, `check_leave_eligibility`) took `employeeId` as a **model-supplied argument** - and the LLM will dutifully look up whatever ID the conversation gives it, as step 6's `EMP003` testing already showed. The problem isn't the prompt wording; it's that `employeeId` was a tool *argument* at all - every argument is something the model chooses, and nothing enforced "you may only ever act on your own ID." The fix: remove `employeeId` from those tools' schemas entirely. The ID now comes from `src/session.js`, set once at login and read directly by tools - the model has no parameter left through which to even attempt supplying a different one.
+
+**Login**: `node index.js` (interactive mode) now prompts `Employee ID:` / `Password:` before the chat starts (same `readline` interface as the chat itself). `node index.js "question"` (single-shot) stays non-interactive - it defaults to logging in as `EMP001`, so every existing documented command keeps working unchanged. `--as=EMP002 --password=... "question"` (or with no question, for interactive mode) logs in as a different seeded employee.
+
+This is a demo-only password (seeded in `src/db/seed.js`), not real security, and deliberately not JWT: JWTs exist to carry identity across *separate, stateless* HTTP requests to a server with no memory between them - that's step 8's problem (a React frontend calling an Express backend), not a CLI process that's just one continuous run from login to `exit`. Step 8 is where this session becomes a real, independently-verified JWT/cookie.
+
+**Tested behavior - the required "must fail" case**: logged in as EMP001, asked "What is EMP002's leave balance?" and (more leadingly) "Look up the leave balance for employee EMP002." In both, the model never even attempted a tool call - it has no `employeeId` parameter to use - and replied that it can only access the authenticated employee's own records. Logging in as EMP002 instead and asking the same self-service questions correctly returns EMP002's own real data, proving the session value is genuinely used, not a hardcoded default elsewhere. Wrong password is rejected with a clear message, not a stack trace.
+
+**A real bug found and fixed along the way**: the login prompt asks two questions back-to-back with nothing in between (unlike the chat loop, where a slow LLM call separates each question). `rl.question()` attaches its listener only when called, so if both answers arrive before the second question is even asked - fast typing, or pasting both lines at once - the second line's event fires with no listener and is silently dropped, hanging forever. Fixed by queuing every line as it arrives instead of listening just-in-time per question.
+
 ## Setup
 
 ```bash
@@ -143,13 +155,17 @@ npx chroma run --path ./data/chroma   # start the vector DB server, leave it run
 ## Run
 
 ```bash
-node index.js                                                    # interactive chat, with context across turns
-node index.js "Hi, who are you?"                                 # single-shot: no tool needed
+node index.js                                                    # interactive chat: prompts for Employee ID / Password
+node index.js "Hi, who are you?"                                 # single-shot: no tool needed, logs in as EMP001
 node index.js "What is my sick leave balance?"                   # single-shot: one tool selected
 node index.js "What is the earned leave carry forward and encashment rule?" # single-shot: RAG policy search
 node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # single-shot: date calculation
 node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: multiple tools, multi-tool reasoning
+node index.js --as=EMP002 --password=vikram123 "What is my leave balance?" # single-shot, as a different employee
+node index.js --as=EMP001 --password=asha123 "What is EMP002's leave balance?" # single-shot: blocked cross-employee access
 ```
+
+Seeded demo logins (`src/db/seed.js`): `EMP001` / `asha123`, `EMP002` / `vikram123`, `EMP003` / `priya123` (EMP003 is on notice period, used to test `check_leave_eligibility`).
 
 (The Chroma server must already be running - see Setup - or you'll get a clear error telling you to start it.)
 

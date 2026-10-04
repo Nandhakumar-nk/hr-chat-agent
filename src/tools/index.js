@@ -8,11 +8,16 @@ import { z } from "zod";
 
 import { getEmployee, getLeaveBalance, listHolidays } from "../db/repository.js";
 import { retrieve } from "../rag/index.js";
+import { getCurrentEmployeeId } from "../session.js";
 
 const getLeaveBalanceTool = tool(
-  async ({ employeeId }) => {
+  async () => {
     console.log("\n🛠 get_leave_balance tool executed");
 
+    // employeeId comes from the logged-in session, never as a model
+    // argument (step 7) - there is no parameter here the model could use
+    // to ask for someone else's balance.
+    const employeeId = getCurrentEmployeeId();
     const balance = getLeaveBalance(employeeId);
     if (!balance) {
       return JSON.stringify({ error: `No leave balance found for employee ${employeeId}` });
@@ -30,11 +35,9 @@ const getLeaveBalanceTool = tool(
     name: "get_leave_balance",
 
     description:
-      "Get the current Casual Leave (CL), Sick Leave (SL), Earned Leave (EL) and legacy Privilege Leave (PL) balance of an employee.",
+      "Get the current Casual Leave (CL), Sick Leave (SL), Earned Leave (EL) and legacy Privilege Leave (PL) balance of the authenticated employee. There is no employeeId parameter - this always returns the logged-in employee's own balance, never another employee's.",
 
-    schema: z.object({
-      employeeId: z.string(),
-    }),
+    schema: z.object({}),
   }
 );
 
@@ -112,9 +115,12 @@ const searchHRPolicyTool = tool(
 );
 
 const getEmployeeProfileTool = tool(
-  async ({ employeeId }) => {
+  async () => {
     console.log("\n🛠 get_employee_profile tool executed");
 
+    // Same rule as get_leave_balance: the ID comes from the session,
+    // never from a model argument.
+    const employeeId = getCurrentEmployeeId();
     const employee = getEmployee(employeeId);
     if (!employee) {
       return JSON.stringify({ error: `No employee found with id ${employeeId}` });
@@ -132,11 +138,9 @@ const getEmployeeProfileTool = tool(
     name: "get_employee_profile",
 
     description:
-      "Get an employee's profile: name, department, date of joining and employment status (active or serving notice period).",
+      "Get the authenticated employee's own profile: name, department, date of joining and employment status (active or serving notice period). There is no employeeId parameter - this always returns the logged-in employee's own profile, never another employee's.",
 
-    schema: z.object({
-      employeeId: z.string(),
-    }),
+    schema: z.object({}),
   }
 );
 
@@ -164,9 +168,12 @@ const LEAVE_TYPE_TO_BALANCE_FIELD = {
 };
 
 const checkLeaveEligibilityTool = tool(
-  async ({ employeeId, leaveType, startDate, endDate }) => {
+  async ({ leaveType, startDate, endDate }) => {
     console.log("\n🛠 check_leave_eligibility tool executed");
 
+    // Same rule as the other self-service tools: the ID comes from the
+    // session, never from a model argument.
+    const employeeId = getCurrentEmployeeId();
     const employee = getEmployee(employeeId);
     if (!employee) {
       return JSON.stringify({ error: `No employee found with id ${employeeId}` });
@@ -213,10 +220,9 @@ const checkLeaveEligibilityTool = tool(
     name: "check_leave_eligibility",
 
     description:
-      "Check whether an employee is eligible to take a specific type of leave over a date range. Combines employment status (notice period blocks all leave), the leave balance, and the working-day count into one eligibility verdict with a reason. Use this for any question asking whether leave 'can' be taken, not just the balance or the day count alone.",
+      "Check whether the authenticated employee is eligible to take a specific type of leave over a date range. Combines employment status (notice period blocks all leave), the leave balance, and the working-day count into one eligibility verdict with a reason. Use this for any question asking whether leave 'can' be taken, not just the balance or the day count alone. There is no employeeId parameter - this always checks the logged-in employee, never another employee.",
 
     schema: z.object({
-      employeeId: z.string(),
       leaveType: z.enum(["CL", "SL", "EL", "PL"]),
       startDate: z.string().describe("Start date, format YYYY-MM-DD"),
       endDate: z.string().describe("End date, format YYYY-MM-DD"),

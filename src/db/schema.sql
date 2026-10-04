@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS employees (
   name TEXT NOT NULL,
   department TEXT NOT NULL,
   date_of_joining TEXT NOT NULL, -- 'YYYY-MM-DD'
-  status TEXT NOT NULL           -- 'active' | 'notice_period'
+  status TEXT NOT NULL,          -- 'active' | 'notice_period'
+  password TEXT NOT NULL         -- demo-only login credential, see src/session.js (step 7)
 );
 
 CREATE TABLE IF NOT EXISTS leave_balances (
