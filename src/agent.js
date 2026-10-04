@@ -48,6 +48,7 @@ after another, if the question needs it.
 // "agent" node: ask the model. Identical to the old loop's
 // modelWithTools.invoke(messages) call.
 async function callModel(state) {
+  console.log("call model, state.messages:", state.messages)
   const response = await modelWithTools.invoke(state.messages);
 
   console.log("\nLLM decision:");
@@ -100,6 +101,7 @@ const graph = new StateGraph(MessagesAnnotation)
 // the same array can be reused across turns to keep the whole
 // conversation in context (step 3's context handling).
 export async function runAgentTurn(messages) {
+  console.log("messages context:", messages);
   const result = await graph.invoke({ messages });
 
   // The graph starts its internal state from `messages` and appends
