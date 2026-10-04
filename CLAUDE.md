@@ -25,7 +25,7 @@ Roadmap toward the assessment (deadline Tue Oct 6, 1 PM; deliverables are a publ
 6. Move to LangGraph JS. Rebuild the hand-written loop as a graph, now that the loop is understood, and add a `check_leave_eligibility` tool that combines balance, policy rules and date calculation. Done.
 7. Authentication: the employee ID comes from the session and never from the LLM. Requesting another employee's data must fail, and the demo shows this. Done (CLI-appropriate version: a `src/session.js` set by login, not a real token - see Architecture).
 8. A React chat UI on a Node/Express backend, with an "agent activity" panel that shows which tools were called and why. Done - `src/session.js`'s identity now uses `AsyncLocalStorage`, JWT verified per-request, `src/agent.js`'s graph state carries `toolActivity`. See Architecture.
-9. Docs and demo: a README with an architecture diagram, framework choices, tools and implementation approach. Record the demo video of the key flows: policy question (RAG), balance (DB), date calculation, eligibility (multi-tool), follow-up (context) and authorization failure.
+9. Docs and demo: a README with an architecture diagram, framework choices, tools and implementation approach. Record the demo video of the key flows: policy question (RAG), balance (DB), date calculation, eligibility (multi-tool), follow-up (context) and authorization failure. Docs half done (README's new Architecture section); demo video still to record.
 
 ## Source documents (`docs/policies/`)
 

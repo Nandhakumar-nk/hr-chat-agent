@@ -2,6 +2,96 @@
 
 An HR chat agent built with LangChain JS and Google Gemini, developed step by step.
 
+## Architecture
+
+### Diagram
+
+```mermaid
+flowchart TB
+    subgraph Client["Client Tier"]
+        Terminal["Terminal (CLI)"]
+        Browser["Browser (React SPA)"]
+    end
+
+    subgraph Backend["Application Tier - Node.js"]
+        direction TB
+        Entry["Entry Points"]
+        Auth["Auth and Session"]
+        Presentation["Presentation"]
+        Orchestration["Agent Orchestration
+LangGraph agent loop"]
+        Business["Business Logic
+6 HR Tools"]
+        DataAccess["Data Access"]
+    end
+
+    subgraph DataTier["Data Tier"]
+        SQLite[("SQLite")]
+        Chroma[("Chroma
+RAG Vector Store")]
+    end
+
+    Gemini["Google Gemini
+LLM and Embeddings"]
+
+    Terminal --> Entry
+    Browser -- "login - HTTPS plus JWT" --> Entry
+    Entry --> Auth
+    Auth --> Presentation
+    Presentation -- "1 question" --> Orchestration
+    Orchestration -- "2 ask" --> Gemini
+    Gemini -. "3 tool_calls or answer" .-> Orchestration
+    Orchestration -- "4 run tool" --> Business
+    Business -- "5" --> DataAccess
+    DataAccess -- "6a RAG retrieve, embed via Gemini" --> Chroma
+    DataAccess -- "6b" --> SQLite
+    DataAccess -. "7 tool result, loops to 2" .-> Orchestration
+    Orchestration -- "8 final answer" --> Presentation
+```
+
+Three tiers: the **Client Tier** (the CLI terminal and the React browser UI, both just different ways to reach the same backend), the **Application Tier** (a Node.js process - `server.js` for the web API or `index.js` for the CLI - layered top to bottom: entry point, auth/session, presentation, agent orchestration, business logic, data access, each layer only talking to the one below it), and the **Data Tier** (SQLite for structured HR data, Chroma for the policy document's vector embeddings), with Google Gemini as the one external service for both the chat model and embeddings. The login path (Terminal/Browser through Entry Points, Auth and Session, to Presentation) happens once per session; the numbered edges (1-8) are the turn-by-turn loop that repeats for every question.
+
+| Diagram node | Real file(s) |
+|---|---|
+| Entry Points | `server.js`, `index.js` |
+| Auth and Session | `src/session.js`, `src/server/auth.js` |
+| Presentation | `src/server/routes.js`, `src/chat.js` |
+| Agent Orchestration | `src/agent.js` |
+| Business Logic | `src/tools/index.js` |
+| Data Access | `src/db/repository.js`, `src/rag/index.js` |
+
+The numbered edges are not incidental - they are the actual order of execution for one turn, including the loop. Take a policy question like "how many days of earned leave carry forward to next year?": (1) Presentation sends the question to Orchestration, which (2) asks Gemini. Gemini's reply comes back as (3) `tool_calls or answer` - here, a call to `search_hr_policy` - so Orchestration sends (4) `run tool` into Business Logic, which (5) calls Data Access. Data Access (6a) retrieves against Chroma, embedding the query via Gemini first, or (6b) reads SQLite directly, depending on which tool ran. The result returns as (7) a dotted `tool result` loop back to Orchestration - which may repeat from (2), asking Gemini again, if the question needs another tool (the same LangGraph cycle step 6's `check_leave_eligibility` relies on when it needs balance, policy and date-calculation results together). Only once the model stops requesting tools does Orchestration send (8) the final answer back to Presentation, citing the policy page.
+
+### Framework choices
+
+Each choice below names what that tool specializes in relative to its alternatives, why that specialization matches this project's actual workload, and the honest trade-off where one exists.
+
+- **Node.js/JavaScript end-to-end** - Node specializes in event-driven, non-blocking I/O: orchestrating many concurrent external calls (LLM requests, database reads, vector search) rather than CPU-bound local computation. An HR chat agent's actual workload is exactly that shape - waiting on API responses and tool calls, never running inference locally - which is Node's specialized niche, not Python's (Python specializes in the numeric/ML-training workloads this project never does locally). Running one language across frontend and backend also means the same validation schemas (the `zod` schemas each tool already declares) could, in principle, be shared directly between client and server, with no serialization boundary between two different type systems. Trade-off: Python's LangChain/AI-tooling ecosystem is broader and more mature than its JavaScript counterpart - the reason most agent tutorials default to it - accepted here in exchange for a single-language, single-runtime stack.
+- **LangChain JS + LangGraph** - LangChain specializes in a standardized tool/function-calling interface across LLM providers; LangGraph specializes specifically in agentic control flow as an explicit graph (conditional branches, loops) rather than a one-shot linear chain. This HR agent needs exactly that: multi-step tool orchestration that continues or stops based on what the model decides mid-conversation (balance lookup, then eligibility check, then policy citation), which is LangGraph's specialized niche, not a simple single-pass prompt/response.
+- **Google Gemini** - Flash-tier Gemini specializes in low-latency, cost-efficient tool-calling with a large context window, from the same vendor that also provides the embeddings model used for RAG. An HR assistant's workload is many small, frequent tool-calling exchanges within one conversation - exactly the speed/cost profile Flash-tier models are built for, as opposed to a frontier/reasoning-tier model specialized for fewer, deeper, more expensive completions this workload doesn't need. Using one vendor for both chat and embeddings also keeps the embedding space consistent - embeddings from different providers aren't directly comparable, so mixing them would mean reconciling two incompatible vector spaces for no benefit here.
+- **RAG (retrieval-augmented generation)** - specializes in grounding answers in a source document at query time, as opposed to fine-tuning (which bakes knowledge into model weights, expensive to update and prone to silently stale answers) or stuffing the whole policy into every prompt's context (works until the document outgrows the context window, and pays its full token cost on every single turn regardless of relevance). The HR policy here changes independently of the model and needs a citable source page in the answer - RAG's specialization (retrieve only the relevant passage, on demand, with its source) fits that directly; the other two approaches solve problems (baking in static knowledge, or guaranteeing every token is visible) this use case doesn't have.
+- **Chroma** - specializes in embeddable, local-first vector search with minimal setup, as opposed to managed/distributed vector databases (Pinecone, Weaviate) that specialize in massive multi-tenant scale. This project's RAG corpus is one small policy document, a few dozen chunks, single-tenant - exactly Chroma's specialized sweet spot; a distributed vector DB's specialization (huge scale, many tenants) would be solving a problem this use case doesn't have. Trade-off: it runs as a single local process here, no clustering/replication/backup - fine at this scale, a real limit for multi-user production.
+- **`node:sqlite`** - specializes in embedded, zero-configuration, single-file storage optimized for read-heavy, low-concurrency access, as opposed to Postgres/MySQL's specialization in high-concurrency multi-client server workloads. This project's HR data (a handful of employees, mostly read traffic - balance/profile lookups - infrequent writes) is precisely that profile. Trade-off: SQLite's single-writer model is the real ceiling - fine for the seeded employee set here, something a real multi-user production system would migrate off of.
+- **Express + JWT** - Express specializes in minimal, unopinionated HTTP routing without an enforced architecture, fitting a handful of endpoints rather than needing a heavier full-stack framework's scaffolding. JWT specializes in stateless, self-contained identity - verifiable without a shared session store - which fits an API meant to stay horizontally scalable (no central session store required; `AsyncLocalStorage` resolves identity per-request, in-process). Already genuinely production-appropriate, as the concurrency test demonstrated - no trade-off to accept here.
+- **React + TypeScript + Vite** - React specializes in component-based, stateful interactive UIs, fitting the dashboard's non-trivial client state (chat history, FAB/drawer/full modes, multiple live data cards) better than simpler templating built for mostly-static pages. TypeScript specializes in catching type errors at compile time, valuable given the API response shapes flowing through this state. Vite specializes in fast, minimal-config dev tooling for a single-page app - fitting this project better than a heavier meta-framework (e.g. Next.js) whose specialization (server-side rendering, file-based routing) this single-page dashboard doesn't use.
+
+### Tools
+
+| Tool | Purpose | Reads from |
+|---|---|---|
+| `get_leave_balance` | Casual/Sick/Earned/Privilege leave balance for the authenticated employee | SQLite |
+| `calculate_leave_days` | Working days between two dates, excluding weekends and public holidays | SQLite (holidays) |
+| `search_hr_policy` | Retrieves the most relevant passages from the leave policy PDF, cited by page | Chroma (RAG) |
+| `get_employee_profile` | Name, department, date of joining, employment status | SQLite |
+| `get_holidays` | The company's public holiday list | SQLite |
+| `check_leave_eligibility` | Combines employment status, balance and working-day count into one eligibility verdict | SQLite |
+
+Every tool takes its employee ID from the session, never as a model-supplied argument - the model has no parameter through which it could ask for another employee's data.
+
+### Implementation approach
+
+Built incrementally, one concept per step (see the step-by-step log below), each step committed and tested before the next began. Claims were verified empirically rather than assumed: step 6's `check_leave_eligibility` tool was only added after measuring the model getting a real eligibility question wrong in 2 of 5 identical runs without it; step 8's `AsyncLocalStorage` session fix was verified by firing 20 real concurrent requests across two different logged-in employees and confirming zero cross-talk; the UI's markdown rendering and dashboard layout were verified with actual rendered screenshots, not just a successful build. The sections below are that build log, in order.
+
 ## Step 1: one agent, one tool
 
 `index.js` gives the LLM a single tool, `get_leave_balance`, and runs one tool-calling round:
@@ -228,7 +318,7 @@ Log in with any seeded employee/password pair above.
 ## Known limitations (next steps)
 
 - No tool reads `leave_history` yet (a future eligibility refinement).
-- Passwords (CLI and web) are a plaintext demo credential, not hashed - a deliberate scope call for this assessment, not an oversight.
+- Passwords (CLI and web) are a plaintext demo credential, not hashed - a deliberate scope call for this project, not an oversight - a stand-in credential scheme demonstrating the session architecture, not a production authentication system.
 - Neither the interactive CLI chat's history nor the server's per-employee conversation history is ever trimmed, so a very long session keeps growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
 - The server's conversation history (`src/server/conversations.js`) is in-memory only - it resets if the server restarts.
 - Chroma must be started manually before running the app - it isn't auto-spawned, so the demo needs two terminals (or the server started ahead of time).
