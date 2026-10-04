@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "server": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +18,10 @@
     "@langchain/langgraph": "^1.4.18",
     "@langchain/textsplitters": "^1.0.2",
     "chromadb": "^3.5.0",
+    "cors": "^2.8.6",
     "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "pdf-parse": "^2.4.5",
     "zod": "^4.6.5"
   }

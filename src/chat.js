@@ -5,7 +5,7 @@
 import { createInterface } from "node:readline/promises";
 
 import { SYSTEM_PROMPT, runAgentTurn } from "./agent.js";
-import { login } from "./session.js";
+import { authenticate } from "./session.js";
 
 // Queues every 'line' event as it arrives, instead of attaching a
 // one-shot listener per question like rl.question() does. Needed here
@@ -32,7 +32,9 @@ function createLineQueue(rl) {
 // Interactive login prompt, used by index.js when no --as/--password
 // flags were given. Plain visible input (no masking) - this is a
 // demo-only credential (src/session.js), not real security, so the
-// extra complexity of hiding keystrokes isn't worth it here.
+// extra complexity of hiding keystrokes isn't worth it here. Returns the
+// authenticated employee - index.js is the one that opens the session
+// (withSession), since it also owns the single-shot/flag-based path.
 export async function promptLogin() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const nextLine = createLineQueue(rl);
@@ -41,8 +43,9 @@ export async function promptLogin() {
     const employeeId = (await nextLine()).trim();
     process.stdout.write("Password: ");
     const password = (await nextLine()).trim();
-    const employee = login(employeeId, password);
+    const employee = authenticate(employeeId, password);
     console.log(`Logged in as ${employee.name} (${employee.id}).\n`);
+    return employee;
   } finally {
     rl.close();
   }
@@ -59,10 +62,10 @@ export async function runSingleShot(question) {
 
   console.log(`\nYou: ${question}`);
 
-  const response = await runAgentTurn(messages);
+  const { message } = await runAgentTurn(messages);
 
   console.log("\nHR Agent:");
-  console.log(response.text);
+  console.log(message.text);
 }
 
 // Interactive chat mode: node index.js (no argument)
@@ -85,10 +88,10 @@ export async function runInteractiveChat() {
 
     messages.push({ role: "user", content: question });
 
-    const response = await runAgentTurn(messages);
+    const { message } = await runAgentTurn(messages);
 
     console.log("\nHR Agent:");
-    console.log(response.text, "\n");
+    console.log(message.text, "\n");
   }
 
   rl.close();

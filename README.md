@@ -144,6 +144,36 @@ This is a demo-only password (seeded in `src/db/seed.js`), not real security, an
 
 **A real bug found and fixed along the way**: the login prompt asks two questions back-to-back with nothing in between (unlike the chat loop, where a slow LLM call separates each question). `rl.question()` attaches its listener only when called, so if both answers arrive before the second question is even asked - fast typing, or pasting both lines at once - the second line's event fires with no listener and is silently dropped, hanging forever. Fixed by queuing every line as it arrives instead of listening just-in-time per question.
 
+## Step 8: a React chat UI on a Node/Express backend
+
+Every step so far was one CLI process, one user, sequential. A real server breaks an assumption step 7's `src/session.js` relied on: it was a single module-level variable set at login, which is unsafe the moment two people can be logged in at once - a request interleaving could leak one employee's identity into another's in-flight request, the exact bug step 7 was built to prevent, reintroduced at the concurrency level. The fix is `AsyncLocalStorage` (`node:async_hooks`, built into Node - no new dependency): it binds "who is this" to one request's async call chain instead of to shared module state, so concurrent requests can never see each other's identity. No tool's code changes - `getCurrentEmployeeId()` keeps its exact zero-argument signature from step 7; only `src/session.js` and the two entry points (the CLI, the new Express middleware) change how that value gets established.
+
+**Architecture**:
+```text
+index.js                 CLI entry point - unchanged behavior
+server.js                 NEW: Express entry point
+src/session.js             CHANGED: AsyncLocalStorage instead of a module variable
+src/agent.js                CHANGED: graph state gains a toolActivity channel
+src/server/
+  auth.js                   JWT sign/verify + the middleware that opens a per-request session
+  routes.js                  POST /api/login, GET /api/me, POST /api/chat
+  conversations.js            in-memory Map<employeeId, messages[]> - per-user chat history
+client/                   NEW, top-level, separate package: Vite + React + TypeScript
+```
+
+**JWT, the real version of step 7's session**: `POST /api/login` validates the same demo password check as the CLI (still explicitly a stand-in, not hashed - a deliberate scope call, not an oversight) and signs a token with the employee ID as its subject. Every other request carries `Authorization: Bearer <token>`; middleware verifies it **independently, every single request** - this is the real, per-request verification step 7's note promised, replacing the CLI's in-process variable.
+
+**Agent activity panel**: the LangGraph state (`src/agent.js`) gained a second channel alongside `messages` - `toolActivity`, accumulating `{name, args, result}` for every tool call in a turn. `runAgentTurn` now returns `{ message, toolActivity }`; the CLI (`src/chat.js`) only ever used `.message` and is otherwise unaffected. The frontend renders `toolActivity` in a collapsible panel next to each answer - directly fulfilling "shows which tools were called and why," not just a text description of it.
+
+**Conversation history**: an in-memory `Map<employeeId, messages[]>` (`src/server/conversations.js`) - same idea as the CLI's single array from step 3, just keyed per user since a server can have several people chatting at once. Resets if the server restarts, which is fine for a demo.
+
+**Tested behavior**:
+- Logged in as two different employees via two tokens, fired 20 requests interleaved and concurrently (10 each) - every single response stayed correctly scoped to its own employee, zero cross-talk, confirming the `AsyncLocalStorage` fix actually holds under real concurrency, not just in theory.
+- `/api/chat`'s `toolActivity` correctly reflects the tools a turn actually called, args and result included.
+- Missing, garbage, or expired tokens are rejected with a clean `401`, not a crash. Wrong login credentials are rejected the same way.
+- The CLI (`index.js`) still works exactly as it did after steps 1-7, unaffected by the session/agent changes.
+- The frontend type-checks cleanly (`tsc --noEmit`) and the production build (`npm run build` in `client/`) succeeds; `server.js` correctly serves the built output.
+
 ## Setup
 
 ```bash
@@ -169,9 +199,36 @@ Seeded demo logins (`src/db/seed.js`): `EMP001` / `asha123`, `EMP002` / `vikram1
 
 (The Chroma server must already be running - see Setup - or you'll get a clear error telling you to start it.)
 
+## Running the web UI (step 8)
+
+```bash
+cp .env.example .env   # add JWT_SECRET, a long random string, alongside GOOGLE_API_KEY
+npx chroma run --path ./data/chroma   # if not already running
+```
+
+`server.js` is a pure API - it never serves the frontend's files. The frontend (`client/`) is always its own separate process, in development and in the demo alike; they talk to each other purely over HTTP, and there's exactly one mechanism for how the frontend learns where the API is in every mode: `VITE_API_URL` (`cp client/.env.example client/.env` once - Vite loads it automatically, dev included; no proxy, no other fallback).
+
+**Development** (two terminals, auto-reloading frontend):
+```bash
+node server.js                 # terminal 1: the API, http://localhost:3001
+cd client && cp .env.example .env && npm run dev   # terminal 2: the UI, http://localhost:5173
+```
+
+**Production-like standalone run** (what the demo recording uses - genuinely separate origins, real CORS):
+```bash
+node server.js                                                    # terminal 1: the API, http://localhost:3001
+cd client && npm run build      # VITE_API_URL from client/.env is baked into the build
+npm run preview                                                    # terminal 2: serves it standalone, http://localhost:4173
+```
+
+Log in with any seeded employee/password pair above.
+
+**Deploying the frontend and backend to different places for real**: the same two variables used above are exactly what that needs. `client/src/api.ts` reads `VITE_API_URL` (change it in `client/.env`, or set it when building, to the real backend's URL); `server.js` reads `CORS_ORIGIN` (unset = any origin allowed, fine on localhost, not once this leaves your machine) - set it to the real frontend's URL. See `client/.env.example` and `.env.example`.
+
 ## Known limitations (next steps)
 
-- No tool reads `leave_history` or distinguishes `active` vs `notice_period` status yet (eligibility logic comes in step 6).
-- The LLM fills in `employeeId` from the system prompt. In the real design it must come from the authenticated session, never from the model (step 7).
-- The interactive chat's message history is never trimmed, so a very long session would keep growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
+- No tool reads `leave_history` yet (a future eligibility refinement).
+- Passwords (CLI and web) are a plaintext demo credential, not hashed - a deliberate scope call for this assessment, not an oversight.
+- Neither the interactive CLI chat's history nor the server's per-employee conversation history is ever trimmed, so a very long session keeps growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
+- The server's conversation history (`src/server/conversations.js`) is in-memory only - it resets if the server restarts.
 - Chroma must be started manually before running the app - it isn't auto-spawned, so the demo needs two terminals (or the server started ahead of time).

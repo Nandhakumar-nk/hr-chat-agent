@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { runSingleShot, runInteractiveChat, promptLogin } from "./src/chat.js";
 import { ensureIndexed } from "./src/rag/index.js";
-import { login } from "./src/session.js";
+import { authenticate, withSession } from "./src/session.js";
 
 try {
   await ensureIndexed();
@@ -30,24 +30,30 @@ for (const arg of process.argv.slice(2)) {
   }
 }
 
+let employee;
 try {
   if (as || password) {
-    login(as, password);
+    employee = authenticate(as, password);
   } else if (question) {
     // Single-shot mode's whole purpose is quick, non-interactive tests
     // (step 3), so it defaults to the same employee every earlier step's
     // examples used, rather than prompting.
-    login("EMP001", "asha123");
+    employee = authenticate("EMP001", "asha123");
   } else {
-    await promptLogin();
+    employee = await promptLogin();
   }
 } catch (error) {
   console.error(`\n${error.message}\n`);
   process.exit(1);
 }
 
-if (question) {
-  await runSingleShot(question);
-} else {
-  await runInteractiveChat();
-}
+// Everything that runs for this process - single question or the whole
+// interactive chat - runs inside one session, so every tool call anywhere
+// in that chain sees this employee via getCurrentEmployeeId().
+await withSession(employee, async () => {
+  if (question) {
+    await runSingleShot(question);
+  } else {
+    await runInteractiveChat();
+  }
+});

@@ -1,0 +1,218 @@
+:root {
+  --border: #d9dde3;
+  --bg: #f7f8fa;
+  --accent: #2563eb;
+  --user-bubble: #2563eb;
+  --agent-bubble: #ffffff;
+  --error: #b3261e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: #1b1f24;
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px 16px;
+}
+
+/* Login */
+
+.login {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 10vh;
+}
+
+.login h1 {
+  font-size: 1.4rem;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.login label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #4a5160;
+}
+
+/* Chat */
+
+.chat {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+}
+
+.chat header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px;
+}
+
+.hint {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+}
+
+.message.user {
+  align-items: flex-end;
+}
+
+.message.agent {
+  align-items: flex-start;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.message.user .bubble {
+  background: var(--user-bubble);
+  color: #fff;
+  border-bottom-right-radius: 2px;
+}
+
+.message.agent .bubble {
+  background: var(--agent-bubble);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 2px;
+}
+
+/* Agent activity panel */
+
+.activity-panel {
+  margin-top: 6px;
+  max-width: 85%;
+  font-size: 0.78rem;
+  color: #4a5160;
+}
+
+.activity-panel summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.activity-panel ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-panel li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.tool-name {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+}
+
+.activity-panel .args {
+  margin-top: 2px;
+  font-family: ui-monospace, monospace;
+}
+
+.activity-panel .result {
+  margin: 6px 0 0;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* Shared */
+
+input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.logout {
+  background: none;
+  color: #6b7280;
+  border: 1px solid var(--border);
+}
+
+.chat form {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.chat form input {
+  flex: 1;
+}
+
+.error {
+  color: var(--error);
+  font-size: 0.85rem;
+}

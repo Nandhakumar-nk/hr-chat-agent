@@ -15,7 +15,7 @@
 
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ToolMessage } from "@langchain/core/messages";
-import { StateGraph, MessagesAnnotation, START, END } from "@langchain/langgraph";
+import { StateGraph, MessagesAnnotation, Annotation, START, END } from "@langchain/langgraph";
 
 import { toolsByName } from "./tools/index.js";
 
@@ -58,11 +58,15 @@ async function callModel(state) {
 }
 
 // "tools" node: run every tool the model just requested. Identical to
-// the old loop's for-loop over response.tool_calls.
+// the old loop's for-loop over response.tool_calls, plus recording each
+// call into toolActivity - the data the "agent activity" panel (step 8)
+// renders, so the UI can show which tools ran and why without parsing
+// console output.
 async function callTools(state) {
   const lastMessage = state.messages.at(-1);
 
   const toolMessages = [];
+  const activity = [];
   for (const toolCall of lastMessage.tool_calls) {
     const toolToRun = toolsByName[toolCall.name];
     const result = await toolToRun.invoke(toolCall.args);
@@ -76,9 +80,10 @@ async function callTools(state) {
         tool_call_id: toolCall.id,
       })
     );
+    activity.push({ name: toolCall.name, args: toolCall.args, result });
   }
 
-  return { messages: toolMessages };
+  return { messages: toolMessages, toolActivity: activity };
 }
 
 // Conditional edge after "agent": more tool calls requested -> "tools",
@@ -88,7 +93,20 @@ function shouldContinue(state) {
   return lastMessage.tool_calls?.length ? "tools" : END;
 }
 
-const graph = new StateGraph(MessagesAnnotation)
+// Graph state: the standard `messages` channel, plus `toolActivity` - a
+// second channel, reset to [] on each `graph.invoke()` call (it isn't
+// part of the `messages` input, so it starts from its own default every
+// turn), accumulating via concat as callTools runs. This is what the
+// step 8 agent-activity panel reads; callModel never touches it.
+const AgentState = Annotation.Root({
+  ...MessagesAnnotation.spec,
+  toolActivity: Annotation({
+    reducer: (existing, update) => existing.concat(update),
+    default: () => [],
+  }),
+});
+
+const graph = new StateGraph(AgentState)
   .addNode("agent", callModel)
   .addNode("tools", callTools)
   .addEdge(START, "agent")
@@ -100,6 +118,11 @@ const graph = new StateGraph(MessagesAnnotation)
 // turn's user message, any tool calls/results, and the final answer), so
 // the same array can be reused across turns to keep the whole
 // conversation in context (step 3's context handling).
+//
+// Returns { message, toolActivity }: `message` is the final answer
+// (same as this function used to return directly - src/chat.js reads
+// `.message.text`); `toolActivity` is this turn's tool calls, for
+// callers that want to show them (the step 8 API/UI) - the CLI ignores it.
 export async function runAgentTurn(messages) {
   console.log("messages context:", messages);
   const result = await graph.invoke({ messages });
@@ -112,5 +135,5 @@ export async function runAgentTurn(messages) {
   messages.length = 0;
   messages.push(...result.messages);
 
-  return messages.at(-1);
+  return { message: messages.at(-1), toolActivity: result.toolActivity };
 }

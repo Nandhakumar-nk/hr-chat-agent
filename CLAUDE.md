@@ -24,7 +24,7 @@ Roadmap toward the assessment (deadline Tue Oct 6, 1 PM; deliverables are a publ
 5. RAG over `docs/policies/leave-policy.pdf`: chunk, embed, retrieve, and cite the source page in answers. Done.
 6. Move to LangGraph JS. Rebuild the hand-written loop as a graph, now that the loop is understood, and add a `check_leave_eligibility` tool that combines balance, policy rules and date calculation. Done.
 7. Authentication: the employee ID comes from the session and never from the LLM. Requesting another employee's data must fail, and the demo shows this. Done (CLI-appropriate version: a `src/session.js` set by login, not a real token - see Architecture).
-8. A React chat UI on a Node/Express backend, with an "agent activity" panel that shows which tools were called and why. **This is where step 7's session becomes real**: a verified JWT/cookie, checked independently on every HTTP request by the Express backend - not the in-process `src/session.js` variable, which only ever made sense for a single long-running CLI process with no request boundary to protect.
+8. A React chat UI on a Node/Express backend, with an "agent activity" panel that shows which tools were called and why. Done - `src/session.js`'s identity now uses `AsyncLocalStorage`, JWT verified per-request, `src/agent.js`'s graph state carries `toolActivity`. See Architecture.
 9. Docs and demo: a README with an architecture diagram, framework choices, tools and implementation approach. Record the demo video of the key flows: policy question (RAG), balance (DB), date calculation, eligibility (multi-tool), follow-up (context) and authorization failure.
 
 ## Source documents (`docs/policies/`)
@@ -45,11 +45,13 @@ Policy rules the tools must implement, not just retrieve:
 
 ```bash
 npm install
-cp .env.example .env              # set GOOGLE_API_KEY (and optionally GEMINI_MODEL)
+cp .env.example .env              # set GOOGLE_API_KEY, JWT_SECRET (and optionally GEMINI_MODEL)
 npx chroma run --path ./data/chroma  # start the vector DB server first, leave it running
 node index.js                     # interactive chat: prompts for Employee ID / Password, context kept across turns
 node index.js "<question>"        # single-shot: ask one question and exit, logs in as EMP001 by default
 node index.js --as=EMP002 --password=vikram123 "<question>"  # single-shot or interactive, as a different seeded employee
+node server.js                    # the Express API (step 8), http://localhost:3001
+cd client && npm run dev          # the React UI dev server, http://localhost:5173 - proxies /api to 3001
 ```
 
 Seeded demo logins (`src/db/seed.js`): `EMP001`/`asha123`, `EMP002`/`vikram123`, `EMP003`/`priya123` (notice period). If `src/db/schema.sql` changes, delete `data/hr.sqlite` and let `connection.js` reseed it - there's no migration system, and the file is gitignored/disposable.
@@ -61,13 +63,16 @@ There are no tests, linter or build step. To verify a change, run `index.js` wit
 The code is layered, each layer only talking to the one below it:
 
 ```text
-index.js            entry point: arg parsing, login, single-shot vs interactive
-src/chat.js          presentation: the two CLI modes (node:readline), plus the login prompt
-src/agent.js         orchestration: the model, bindTools, the runAgentTurn graph (LangGraph)
-src/tools/index.js   business logic: the tool definitions
-src/session.js        the logged-in employee ID for this process - tools read it, nothing else sets it
-src/db/              data access: schema.sql, seed.js, connection.js, repository.js
-src/rag/             RAG: pdfLoader.js, embeddings.js, chromaStore.js, index.js (ensureIndexed/retrieve)
+index.js             CLI entry point: arg parsing, login, single-shot vs interactive
+server.js             Express entry point (step 8): serves the API, and client/dist if it exists
+src/chat.js           presentation: the two CLI modes (node:readline), plus the login prompt
+src/agent.js          orchestration: the model, bindTools, the runAgentTurn graph (LangGraph)
+src/tools/index.js    business logic: the tool definitions
+src/session.js         the current request/process's employee ID (AsyncLocalStorage) - tools read it, nothing else sets it
+src/server/            HTTP-only: auth.js (JWT + session middleware), routes.js, conversations.js
+src/db/               data access: schema.sql, seed.js, connection.js, repository.js
+src/rag/              RAG: pdfLoader.js, embeddings.js, chromaStore.js, index.js (ensureIndexed/retrieve)
+client/               separate package (step 8): Vite + React + TypeScript chat UI
 ```
 
 - Tools never touch the database or Chroma directly - they call functions in `src/db/repository.js` or `src/rag/index.js`. `src/db/connection.js` opens/creates `data/hr.sqlite` (gitignored) and seeds it from `src/db/seed.js` only when `employees` is empty, so re-running never duplicates data.
@@ -78,9 +83,14 @@ src/rag/             RAG: pdfLoader.js, embeddings.js, chromaStore.js, index.js 
 - Uses `node:sqlite` and `node:readline`, both built into Node.js - avoid adding a dependency for something the runtime already provides.
 - `src/rag/` is written directly against `pdf-parse` and the `chromadb` client, not `@langchain/community`'s `PDFLoader`/`Chroma` wrappers - that package was deprecated/sunset by the LangChain team (no replacement exists yet), so don't add it back for convenience later. `@langchain/textsplitters` and `@langchain/google-genai`'s embeddings are unaffected and still used directly.
 - Chroma (`src/rag/chromaStore.js`) is the one external process this project depends on - a real local vector-DB server (`npx chroma run --path ./data/chroma`), not embedded in the Node process. `ensureIndexed()` (called once from `index.js`) gives a clear error if it isn't running, rather than a raw stack trace.
-- `employeeId` is never a tool argument (step 7). `get_leave_balance`, `get_employee_profile` and `check_leave_eligibility` all take zero or fewer arguments than before and call `getCurrentEmployeeId()` from `src/session.js` internally - the model has no parameter through which to ask for another employee's data, so there's no prompt-level trust to get wrong. `src/session.js`'s password check is a demo stand-in (see roadmap step 7/8) - real session handling arrives in step 8 once there's an actual HTTP request boundary to verify on each call.
+- `employeeId` is never a tool argument (step 7). `get_leave_balance`, `get_employee_profile` and `check_leave_eligibility` all take zero or fewer arguments than before and call `getCurrentEmployeeId()` from `src/session.js` internally - the model has no parameter through which to ask for another employee's data, so there's no prompt-level trust to get wrong.
+- `src/session.js` uses `AsyncLocalStorage` (`node:async_hooks`, built in), not a plain module variable - a server can have several people's requests in flight at once, and a shared variable would let one request's identity leak into another's mid-flight. `withSession(employee, fn)` binds `employee` for the duration of `fn`'s whole async chain: the CLI (`index.js`) calls it once per run; the Express middleware (`src/server/auth.js`) calls it once per request, after verifying the JWT - so concurrent requests are isolated regardless of timing. Tested directly: 20 concurrent interleaved requests across two different logged-in employees, zero cross-talk. `authenticate(employeeId, password)` (the password check itself) is still a demo stand-in, not hashed - a deliberate scope call, not an oversight.
 - `src/chat.js`'s `createLineQueue` exists because `rl.question()` attaches its listener only when called: two questions asked back-to-back with no async work in between (the login prompt) can drop the second answer if both arrive before the second question is asked (fast typing, or a paste). The chat loop doesn't need this - an LLM call always separates its questions, giving plenty of time. Don't revert the login prompt to plain `rl.question()` calls.
+- `src/agent.js`'s graph state is a custom `Annotation.Root` combining `MessagesAnnotation.spec` with a second channel, `toolActivity` (reducer: concat, default: `[]` - resets every `graph.invoke()` call since it isn't part of the `messages` input). `callTools` pushes `{name, args, result}` per call; `callModel` never touches it. `runAgentTurn` returns `{ message, toolActivity }`, not just the final message - `src/chat.js` destructures `.message` and ignores the rest; `src/server/routes.js`'s `/api/chat` sends both to the frontend, which is what the agent-activity panel renders.
+- `server.js` is a pure API - it never serves `client/dist` or any frontend file. The frontend is always a separate process: `cd client && npm run dev` for development, or `npm run build && npm run preview` for a standalone production-like run on its own port. Don't add static-file serving back into `server.js` for convenience - that was deliberately removed.
+- `client/src/api.ts`'s `API_BASE` (from `VITE_API_URL`, typed in `client/src/vite-env.d.ts`) is the one and only mechanism the frontend uses to find the API, in every mode - dev, preview, and real deployment alike. There is no dev proxy (deliberately removed from `client/vite.config.ts`, along with the `.env`-based `VITE_API_URL` default it used to shortcut); `client/.env.example`'s `VITE_API_URL=http://localhost:3001` is the default every mode relies on, copied once to `client/.env` (Vite loads `.env` automatically, dev included). `server.js`'s `CORS_ORIGIN` is the matching piece on the backend side - unset, any origin is allowed (fine on localhost). Change both to the real URLs for a genuine separate deployment. Verified directly: built the frontend with `VITE_API_URL=http://localhost:3001`, served it standalone via `vite preview` on a different port (4173), and confirmed a real cross-origin login succeeds with the correct `Access-Control-Allow-Origin` header - and confirmed the proxy's removal actually took (a direct request to the dev server's `/api/login` 404s, proving nothing intercepts it anymore).
 
 ## Current limitations
 
 - `leave_history` is seeded but no tool reads it yet (a future eligibility refinement, e.g. "has this employee already taken EL this quarter").
+- The server's conversation history (`src/server/conversations.js`) is in-memory, per-employee, and lost on restart - a deliberate choice for this assessment (see README Step 8), not a bug.

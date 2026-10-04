@@ -1,18 +1,26 @@
-// The authenticated employee's identity for this CLI run. This is the
-// one place that's allowed to decide "who is this" - tools read it from
-// here, never from a model-supplied argument (that's the whole point of
-// step 7). Real session/token handling (JWT, cookies, verified on every
-// request) is step 8's job, once there's an actual HTTP boundary between
-// a frontend and a backend; a CLI process has no such boundary to
-// protect, so this is a minimal, demo-appropriate stand-in for the same
-// architectural principle: identity comes from the session, not from
-// whatever the model (or the user talking to it) claims.
+// The authenticated employee's identity - the one place that's allowed
+// to decide "who is this". Tools read it from here, never from a
+// model-supplied argument (step 7's whole point).
+//
+// Uses AsyncLocalStorage (node:async_hooks, built in - no new
+// dependency) instead of a single module-level variable. A CLI process
+// serves one person at a time, so a plain `let currentEmployee` was
+// safe there; a server can have several people's requests in flight at
+// once, and a shared variable would let one request's identity leak
+// into another's mid-flight (step 7's exact bug, reintroduced at the
+// concurrency level). AsyncLocalStorage instead binds the employee to
+// one call's async chain - every `await` inside `withSession`'s
+// callback sees it, nothing outside that chain can.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getEmployee } from "./db/repository.js";
 
-let currentEmployee = null;
+const sessionStorage = new AsyncLocalStorage();
 
-export function login(employeeId, password) {
+// Looks up and validates credentials, without touching the session -
+// used both to establish a new session (below) and, on the server, to
+// re-verify a JWT's claimed ID against the real row on every request.
+export function authenticate(employeeId, password) {
   const employee = getEmployee(employeeId);
 
   // Don't reveal whether the ID or the password was wrong - standard
@@ -21,15 +29,23 @@ export function login(employeeId, password) {
     throw new Error("Invalid employee ID or password.");
   }
 
-  currentEmployee = employee;
   return employee;
 }
 
+// Runs `fn` (and everything it awaits) with `employee` as the current
+// session. The CLI calls this once, wrapping its whole run; the Express
+// auth middleware calls it once per request, so concurrent requests
+// never share an identity.
+export function withSession(employee, fn) {
+  return sessionStorage.run(employee, fn);
+}
+
 export function getCurrentEmployeeId() {
-  if (!currentEmployee) {
-    // A tool ran before login - a real bug, not something to paper over
-    // with a silent default.
+  const employee = sessionStorage.getStore();
+  if (!employee) {
+    // A tool ran outside any withSession call - a real bug, not
+    // something to paper over with a silent default.
     throw new Error("No employee is logged in yet.");
   }
-  return currentEmployee.id;
+  return employee.id;
 }
