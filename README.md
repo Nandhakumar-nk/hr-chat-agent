@@ -266,6 +266,8 @@ client/                   NEW, top-level, separate package: Vite + React + TypeS
 - The CLI (`index.js`) still works exactly as it did after steps 1-7, unaffected by the session/agent changes.
 - The frontend type-checks cleanly (`tsc --noEmit`) and the production build (`npm run build` in `client/`) succeeds; `server.js` correctly serves the built output.
 
+**Later UI polish (after the policy-document expansion)**: once RAG grew to cover all 4 policy PDFs, the chat widget got a few more passes. A dark-by-default theme (`client/src/theme.ts`, `ThemeToggle.tsx`) is switchable to light and persisted in `localStorage`, with a small inline script in `index.html` that applies a stored preference before first paint so there's no flash of the wrong theme. `search_hr_policy`'s results now carry the source file through the RAG pipeline's chunk metadata, and a new `Sources` component renders clickable links under any answer that cites policy text - built from that turn's `toolActivity` (structured data the backend already returns), not parsed from the model's citation prose, since its exact wording varies turn to turn. Each link opens the real PDF, served statically from `/policies`, at the cited page. The send button (now labelled "Ask") carries the same robot glyph as the FAB (`RobotIcon.tsx`, shared by both), and smaller touches - an animated "typing" placeholder while a reply is in flight, auto-scroll to the latest message, a glowing FAB, a chat panel surface visually distinct from the page background - round out the agent's visual identity.
+
 ## Setup
 
 ```bash
