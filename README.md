@@ -283,6 +283,7 @@ node index.js "What is my sick leave balance?"                   # single-shot: 
 node index.js "What is the earned leave carry forward and encashment rule?" # single-shot: RAG policy search
 node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # single-shot: date calculation
 node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: multiple tools, multi-tool reasoning
+node index.js "Am I eligible for a staff loan, and can I work from home?"        # single-shot: the 2 newest tools, check_loan_eligibility + check_wfh_eligibility
 node index.js --as=EMP002 --password=vikram123 "What is my leave balance?" # single-shot, as a different employee
 node index.js --as=EMP001 --password=asha123 "What is EMP002's leave balance?" # single-shot: blocked cross-employee access
 ```
@@ -320,6 +321,7 @@ Log in with any seeded employee/password pair above.
 ## Known limitations (next steps)
 
 - No tool reads `leave_history` yet (a future eligibility refinement).
+- `check_wfh_eligibility` only checks the tenure gate - actual WFH day usage isn't tracked anywhere, so the day quota is returned as policy text, not computed against a real count.
 - Passwords (CLI and web) are a plaintext demo credential, not hashed - a deliberate scope call for this project, not an oversight - a stand-in credential scheme demonstrating the session architecture, not a production authentication system.
 - Neither the interactive CLI chat's history nor the server's per-employee conversation history is ever trimmed, so a very long session keeps growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
 - The server's conversation history (`src/server/conversations.js`) is in-memory only - it resets if the server restarts.
