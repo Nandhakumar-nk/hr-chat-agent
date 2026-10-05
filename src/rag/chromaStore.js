@@ -10,7 +10,7 @@ import { ChromaClient } from "chromadb";
 import { embedDocuments } from "./embeddings.js";
 
 const CHROMA_URL = process.env.CHROMA_URL ?? "http://localhost:8000";
-const COLLECTION_NAME = "hr-leave-policy";
+const COLLECTION_NAME = "hr-policies";
 
 const { hostname, port, protocol } = new URL(CHROMA_URL);
 const client = new ChromaClient({
@@ -66,6 +66,7 @@ export async function queryChunks(queryEmbedding, k) {
 
   return documents.map((text, i) => ({
     text,
+    source: metadatas[i]?.source,
     page: metadatas[i]?.page,
   }));
 }

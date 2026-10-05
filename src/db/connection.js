@@ -7,7 +7,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { employees, leaveBalances, leaveHistory, holidays } from "./seed.js";
+import { employees, leaveBalances, leaveHistory, holidays, loans } from "./seed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "..", "..", "data");
@@ -29,10 +29,10 @@ function seedIfEmpty() {
   }
 
   const insertEmployee = db.prepare(
-    "INSERT INTO employees (id, name, department, date_of_joining, status, password) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO employees (id, name, department, date_of_joining, status, password, ctc) VALUES (?, ?, ?, ?, ?, ?, ?)"
   );
   for (const e of employees) {
-    insertEmployee.run(e.id, e.name, e.department, e.dateOfJoining, e.status, e.password);
+    insertEmployee.run(e.id, e.name, e.department, e.dateOfJoining, e.status, e.password, e.ctc);
   }
 
   const insertBalance = db.prepare(
@@ -52,6 +52,13 @@ function seedIfEmpty() {
   const insertHoliday = db.prepare("INSERT INTO holidays (date, name) VALUES (?, ?)");
   for (const h of holidays) {
     insertHoliday.run(h.date, h.name);
+  }
+
+  const insertLoan = db.prepare(
+    "INSERT INTO loans (employee_id, amount, disbursed_date, closed_date, status) VALUES (?, ?, ?, ?, ?)"
+  );
+  for (const l of loans) {
+    insertLoan.run(l.employeeId, l.amount, l.disbursedDate, l.closedDate, l.status);
   }
 }
 

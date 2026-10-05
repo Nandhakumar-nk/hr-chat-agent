@@ -1,10 +1,12 @@
-// RAG layer: indexes docs/policies/leave-policy.pdf into Chroma once,
-// and retrieves the most relevant chunks for a query. Tools
+// RAG layer: indexes all docs/policies/ PDFs into Chroma once, and
+// retrieves the most relevant chunks for a query. Tools
 // (src/tools/index.js) call only ensureIndexed/retrieve from here -
 // never the PDF loader, embeddings, or Chroma client directly.
 //
-// Pipeline: PDF -> one Document per page -> RecursiveCharacterTextSplitter
-// (chunks, page number preserved in metadata) -> embeddings -> Chroma.
+// Pipeline, per document: PDF -> one Document per page ->
+// RecursiveCharacterTextSplitter (chunks, page number preserved in
+// metadata) -> embeddings -> Chroma, tagged with a `source` display name
+// so citations and chunk IDs don't collide across documents.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +17,20 @@ import { embedDocuments, embedQuery } from "./embeddings.js";
 import { countChunks, addChunks, queryChunks } from "./chromaStore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const POLICY_PDF_PATH = path.join(__dirname, "..", "..", "docs", "policies", "leave-policy.pdf");
+const POLICIES_DIR = path.join(__dirname, "..", "..", "docs", "policies");
+
+// holiday-list-2026.pdf is deliberately not here - it's hand-seeded into
+// the holidays table (src/db/seed.js), not retrieved via RAG.
+const POLICY_DOCUMENTS = [
+  { file: "leave-policy.pdf", source: "Leave Policy", idPrefix: "leave-policy" },
+  {
+    file: "Employee Benefits Policy - Newly Wed_Newborn.pdf",
+    source: "Employee Benefits Policy",
+    idPrefix: "employee-benefits",
+  },
+  { file: "Staff Loan Policy - 2025.pdf", source: "Staff Loan Policy", idPrefix: "staff-loan" },
+  { file: "Work from Home - Hybrid Policy.pdf", source: "Work from Home Policy", idPrefix: "wfh-policy" },
+];
 
 export async function ensureIndexed() {
   const existing = await countChunks();
@@ -23,28 +38,33 @@ export async function ensureIndexed() {
     return; // already indexed from a previous run
   }
 
-  console.log("Indexing the HR leave policy PDF (first run only)...");
-
-  const pages = await loadPdfPages(POLICY_PDF_PATH);
+  console.log("Indexing the HR policy PDFs (first run only)...");
 
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 1000,
     chunkOverlap: 150,
   });
-  const chunks = await splitter.splitDocuments(pages);
 
-  const embeddings = await embedDocuments(chunks.map((c) => c.pageContent));
+  let totalChunks = 0;
+  for (const { file, source, idPrefix } of POLICY_DOCUMENTS) {
+    const pages = await loadPdfPages(path.join(POLICIES_DIR, file));
+    const chunks = await splitter.splitDocuments(pages);
+    const embeddings = await embedDocuments(chunks.map((c) => c.pageContent));
 
-  await addChunks(
-    chunks.map((chunk, i) => ({
-      id: `leave-policy-${i}`,
-      text: chunk.pageContent,
-      embedding: embeddings[i],
-      metadata: { page: chunk.metadata.page },
-    }))
-  );
+    await addChunks(
+      chunks.map((chunk, i) => ({
+        id: `${idPrefix}-${i}`,
+        text: chunk.pageContent,
+        embedding: embeddings[i],
+        metadata: { source, page: chunk.metadata.page },
+      }))
+    );
 
-  console.log(`Indexed ${chunks.length} chunks from ${pages.length} pages.`);
+    console.log(`Indexed ${chunks.length} chunks from ${pages.length} pages of ${source}.`);
+    totalChunks += chunks.length;
+  }
+
+  console.log(`Indexed ${totalChunks} chunks total from ${POLICY_DOCUMENTS.length} documents.`);
 }
 
 export async function retrieve(query, k = 3) {

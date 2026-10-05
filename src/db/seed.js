@@ -21,6 +21,7 @@ export const employees = [
     dateOfJoining: "2023-06-12",
     status: "active",
     password: "asha123",
+    ctc: 1500000, // under the 20L staff-loan cap; see loans below for a long-closed loan
   },
   {
     id: "EMP002",
@@ -29,6 +30,7 @@ export const employees = [
     dateOfJoining: "2021-02-01",
     status: "active",
     password: "vikram123",
+    ctc: 2500000, // above the 20L staff-loan cap - the one ineligibility reason for this employee
   },
   {
     id: "EMP003",
@@ -37,6 +39,7 @@ export const employees = [
     dateOfJoining: "2024-11-20",
     status: "notice_period",
     password: "priya123",
+    ctc: 900000, // under cap, but tenure is under 1 year - blocks both the staff loan and WFH tools
   },
 ];
 
@@ -50,6 +53,17 @@ export const leaveHistory = [
   { employeeId: "EMP001", leaveType: "CL", startDate: "2026-02-10", endDate: "2026-02-10", status: "approved" },
   { employeeId: "EMP001", leaveType: "SL", startDate: "2026-04-03", endDate: "2026-04-04", status: "approved" },
   { employeeId: "EMP002", leaveType: "EL", startDate: "2026-05-18", endDate: "2026-05-22", status: "approved" },
+];
+
+// Staff loan history, see staff-loan-policy.pdf. EMP001's loan closed
+// long ago (neither an active loan nor within the 6-month repayment gap),
+// so it's eligibility-neutral - demonstrates that old, fully-closed loans
+// don't block a new one. EMP002's CTC alone already disqualifies them, so
+// this loan's age isn't the deciding factor either. EMP003 has no loan
+// history; their tenure already blocks eligibility on its own.
+export const loans = [
+  { employeeId: "EMP001", amount: 100000, disbursedDate: "2024-03-01", closedDate: "2024-11-01", status: "closed" },
+  { employeeId: "EMP002", amount: 150000, disbursedDate: "2022-01-10", closedDate: "2022-10-01", status: "closed" },
 ];
 
 // All 12 public holidays from docs/policies/holiday-list-2026.pdf.

@@ -21,7 +21,7 @@ flowchart TB
         Orchestration["Agent Orchestration
 LangGraph agent loop"]
         Business["Business Logic
-6 HR Tools"]
+8 HR Tools"]
         DataAccess["Data Access"]
     end
 
@@ -81,10 +81,12 @@ Each choice below names what that tool specializes in relative to its alternativ
 |---|---|---|
 | `get_leave_balance` | Casual/Sick/Earned/Privilege leave balance for the authenticated employee | SQLite |
 | `calculate_leave_days` | Working days between two dates, excluding weekends and public holidays | SQLite (holidays) |
-| `search_hr_policy` | Retrieves the most relevant passages from the leave policy PDF, cited by page | Chroma (RAG) |
+| `search_hr_policy` | Retrieves the most relevant passages across all 4 policy PDFs (leave, benefits, staff loan, WFH), cited by document and page | Chroma (RAG) |
 | `get_employee_profile` | Name, department, date of joining, employment status | SQLite |
 | `get_holidays` | The company's public holiday list | SQLite |
 | `check_leave_eligibility` | Combines employment status, balance and working-day count into one eligibility verdict | SQLite |
+| `check_wfh_eligibility` | Tenure-based work-from-home/hybrid eligibility verdict, plus the day quota | SQLite |
+| `check_loan_eligibility` | Combines tenure, CTC cap, active-loan and repayment-gap checks into one staff-loan eligibility verdict | SQLite |
 
 Every tool takes its employee ID from the session, never as a model-supplied argument - the model has no parameter through which it could ask for another employee's data.
 

@@ -6,7 +6,14 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
-import { getEmployee, getLeaveBalance, listHolidays } from "../db/repository.js";
+import {
+  getEmployee,
+  getLeaveBalance,
+  listHolidays,
+  getActiveLoan,
+  getLastClosedLoan,
+  countLoansInFinancialYear,
+} from "../db/repository.js";
 import { retrieve } from "../rag/index.js";
 import { getCurrentEmployeeId } from "../session.js";
 
@@ -65,6 +72,19 @@ function countWorkingDays(startDate, endDate) {
   return workingDays;
 }
 
+// Shared by check_wfh_eligibility and check_loan_eligibility: completed
+// years of tenure from date_of_joining to today.
+function tenureYears(dateOfJoining) {
+  const joined = new Date(dateOfJoining);
+  const now = new Date();
+  let years = now.getFullYear() - joined.getFullYear();
+  const beforeAnniversary =
+    now.getMonth() < joined.getMonth() ||
+    (now.getMonth() === joined.getMonth() && now.getDate() < joined.getDate());
+  if (beforeAnniversary) years--;
+  return years;
+}
+
 const calculateLeaveDaysTool = tool(
   async ({ startDate, endDate }) => {
     console.log("\n🛠 calculate_leave_days tool executed");
@@ -99,14 +119,14 @@ const searchHRPolicyTool = tool(
 
     return JSON.stringify({
       query,
-      results: results.map((r) => ({ page: r.page, text: r.text })),
+      results: results.map((r) => ({ source: r.source, page: r.page, text: r.text })),
     });
   },
   {
     name: "search_hr_policy",
 
     description:
-      "Search the HR leave policy document for rules about a topic (e.g. casual leave, sick leave, earned leave, PL to EL conversion, maternity, paternity, holidays). Returns the most relevant passages from the real policy PDF, each with the page number it came from - cite the page in your answer.",
+      "Search the company's HR policy documents for rules about a topic: leave (casual, sick, earned, PL to EL conversion, maternity, paternity, holidays), wedding/newborn gift vouchers, the staff loan policy's general terms, or the work-from-home/hybrid policy's general terms. Returns the most relevant passages, each with the source document and page number - cite both in your answer. For a verdict on whether the employee specifically qualifies for a staff loan or WFH, use check_loan_eligibility or check_wfh_eligibility instead of this search.",
 
     schema: z.object({
       query: z.string(),
@@ -230,6 +250,114 @@ const checkLeaveEligibilityTool = tool(
   }
 );
 
+const checkWfhEligibilityTool = tool(
+  async () => {
+    console.log("\n🛠 check_wfh_eligibility tool executed");
+
+    const employeeId = getCurrentEmployeeId();
+    const employee = getEmployee(employeeId);
+    if (!employee) {
+      return JSON.stringify({ error: `No employee found with id ${employeeId}` });
+    }
+
+    const years = tenureYears(employee.date_of_joining);
+
+    let eligible;
+    let reason;
+    if (years < 1) {
+      eligible = false;
+      reason = `Under 1 year of tenure (${years} year(s)); work-from-home-policy.pdf excludes employees with 0-1 year of experience.`;
+    } else if (years < 2) {
+      eligible = false;
+      reason = `${years} year(s) of tenure is in the 1-2 year band, which is not eligible by default. An exception can be granted case-by-case for exceptional performance, with manager and HR approval.`;
+    } else {
+      eligible = true;
+      reason = `${years} year(s) of tenure meets the 2-year threshold for WFH/hybrid eligibility.`;
+    }
+
+    return JSON.stringify({
+      eligible,
+      reason,
+      tenureYears: years,
+      dayQuota: "Up to 2 days/week, 8 days/month, set by the Project Manager, no carry-forward. Extra WFH days beyond the quota are deducted from CL/PL, or treated as Leave Without Pay (LOP) if no balance is available.",
+      note: "Role-based exclusions (senior leadership, support roles, employees in training, critical/red projects) are not tracked in this system and must be confirmed manually - this verdict covers tenure only.",
+      employeeStatus: employee.status,
+    });
+  },
+  {
+    name: "check_wfh_eligibility",
+
+    description:
+      "Check whether the authenticated employee is eligible for work-from-home/hybrid arrangements, based on tenure (work-from-home-policy.pdf). Also returns the WFH day quota and what happens if it's exceeded. There is no employeeId parameter - this always checks the logged-in employee, never another employee. Note the result also flags eligibility criteria this system cannot check (role, training status, project criticality) - mention those as needing manual confirmation.",
+
+    schema: z.object({}),
+  }
+);
+
+const checkLoanEligibilityTool = tool(
+  async () => {
+    console.log("\n🛠 check_loan_eligibility tool executed");
+
+    const employeeId = getCurrentEmployeeId();
+    const employee = getEmployee(employeeId);
+    if (!employee) {
+      return JSON.stringify({ error: `No employee found with id ${employeeId}` });
+    }
+
+    const years = tenureYears(employee.date_of_joining);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const reasons = [];
+    if (years < 1) {
+      reasons.push(`Employment must be confirmed and completed by a minimum of 1 year (current tenure: ${years} year(s)).`);
+    }
+    if (employee.ctc > 2000000) {
+      reasons.push(`CTC of ${employee.ctc} exceeds the 20,00,000 eligibility cap.`);
+    }
+
+    const activeLoan = getActiveLoan(employeeId);
+    if (activeLoan) {
+      reasons.push(`An existing loan (disbursed ${activeLoan.disbursed_date}) is still active - a new loan requires 100% repayment of the previous one first.`);
+    }
+
+    const lastClosedLoan = getLastClosedLoan(employeeId);
+    if (lastClosedLoan) {
+      const monthsSinceClosed =
+        (new Date(today) - new Date(lastClosedLoan.closed_date)) / (1000 * 60 * 60 * 24 * 30);
+      if (monthsSinceClosed < 6) {
+        reasons.push(`Previous loan closed on ${lastClosedLoan.closed_date}, under the required 6-month gap before a new loan.`);
+      }
+    }
+
+    const loansThisYear = countLoansInFinancialYear(employeeId, today);
+    if (loansThisYear >= 1) {
+      reasons.push(`Already availed ${loansThisYear} loan(s) in this financial year (maximum 1 per financial year).`);
+    }
+
+    const eligible = reasons.length === 0;
+
+    return JSON.stringify({
+      eligible,
+      reason: eligible
+        ? "Meets tenure, CTC, and repayment-gap requirements for a new staff loan."
+        : reasons.join(" "),
+      tenureYears: years,
+      ctc: employee.ctc,
+      maxLoanAmount: eligible ? 200000 : undefined,
+      maxTenureMonths: eligible ? 12 : undefined,
+      employeeStatus: employee.status,
+    });
+  },
+  {
+    name: "check_loan_eligibility",
+
+    description:
+      "Check whether the authenticated employee is eligible for a new staff loan (staff-loan-policy.pdf): tenure, CTC cap (20 lakhs), no currently active loan, a 6-month gap since the last loan closed, and at most 1 loan per financial year. Returns the max loan amount and repayment period when eligible. There is no employeeId parameter - this always checks the logged-in employee, never another employee.",
+
+    schema: z.object({}),
+  }
+);
+
 // Name -> tool, so adding a new tool is a one-line change here and in
 // agent.js's bindTools - no extra `if` branches needed.
 export const toolsByName = {
@@ -239,4 +367,6 @@ export const toolsByName = {
   get_employee_profile: getEmployeeProfileTool,
   get_holidays: getHolidaysTool,
   check_leave_eligibility: checkLeaveEligibilityTool,
+  check_wfh_eligibility: checkWfhEligibilityTool,
+  check_loan_eligibility: checkLoanEligibilityTool,
 };
