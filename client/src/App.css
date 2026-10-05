@@ -5,7 +5,7 @@
 
 :root {
   --bg: #0d0f14;
-  --chat-bg: #171a23;
+  --chat-bg: #2a2d34;
   --surface: #171a23;
   --surface-2: #1f232e;
   --border: #2b2f3a;
@@ -497,6 +497,9 @@ button.logout {
 }
 
 .chat form button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: linear-gradient(135deg, #f5811f, #e8505b, #d6409f, #7c4dff, #2f9bd6, #f5811f);
   background-size: 400% 400%;
   animation: fab-gradient 5s ease infinite;

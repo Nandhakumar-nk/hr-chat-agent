@@ -1,26 +1,8 @@
 import { useState } from "react";
 import { Chat } from "./Chat";
-import { ThemeToggle } from "./ThemeToggle";
+import { RobotIcon } from "./RobotIcon";
 
 type Mode = "closed" | "drawer" | "full";
-
-// A small robot/AI-assistant glyph for the FAB - a friendlier, more
-// "agent" feel than a generic chat-bubble emoji. Same inline-SVG
-// approach as Logo.tsx.
-function RobotIcon() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <line x1="12" y1="2" x2="12" y2="5" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="12" cy="2" r="1.4" fill="white" />
-      <rect x="4" y="5" width="16" height="13" rx="4" stroke="white" strokeWidth="1.8" />
-      <circle cx="9" cy="11.5" r="1.6" fill="white" />
-      <circle cx="15" cy="11.5" r="1.6" fill="white" />
-      <path d="M9 15c.8.7 1.9 1 3 1s2.2-.3 3-1" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="2" y1="10" x2="4" y2="10" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-      <line x1="20" y1="10" x2="22" y2="10" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // The floating HR agent: closed (just a FAB) -> drawer (right-hand
 // panel) -> full (covers the viewport) -> back to drawer or closed.
@@ -51,7 +33,6 @@ export function ChatAssistant() {
         <div className="chat-assistant-header">
           <span>HR Agent Assistant</span>
           <div className="chat-assistant-controls">
-            <ThemeToggle className="theme-toggle-chat" />
             {mode === "drawer" ? (
               <button onClick={() => setMode("full")} aria-label="Maximize" title="Maximize">
                 ⤢

@@ -3,6 +3,7 @@ import { sendMessage, type ChatMessage } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
 import { Sources } from "./Sources";
 import { Markdown } from "./Markdown";
+import { RobotIcon } from "./RobotIcon";
 
 // The message list + input only - no header/logout here. Used inside
 // ChatAssistant's drawer or full-page wrapper, which owns its own
@@ -84,7 +85,8 @@ export function Chat() {
           autoFocus
         />
         <button type="submit" disabled={sending}>
-          Send
+          <RobotIcon size={16} />
+          Ask
         </button>
       </form>
     </div>
