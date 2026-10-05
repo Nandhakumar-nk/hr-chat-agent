@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { login, setToken, type Employee } from "./api";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Login({ onLogin }: { onLogin: (employee: Employee) => void }) {
   const [employeeId, setEmployeeId] = useState("");
@@ -25,6 +26,7 @@ export function Login({ onLogin }: { onLogin: (employee: Employee) => void }) {
 
   return (
     <div className="login">
+      <ThemeToggle className="theme-toggle-fixed" />
       <div className="login-brand">
         <Logo size={56} />
         <h1>HR Chat Agent</h1>

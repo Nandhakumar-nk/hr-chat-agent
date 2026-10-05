@@ -6,7 +6,8 @@
 // Pipeline, per document: PDF -> one Document per page ->
 // RecursiveCharacterTextSplitter (chunks, page number preserved in
 // metadata) -> embeddings -> Chroma, tagged with a `source` display name
-// so citations and chunk IDs don't collide across documents.
+// and the original `file` (for linking back to the PDF) so citations and
+// chunk IDs don't collide across documents.
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +57,7 @@ export async function ensureIndexed() {
         id: `${idPrefix}-${i}`,
         text: chunk.pageContent,
         embedding: embeddings[i],
-        metadata: { source, page: chunk.metadata.page },
+        metadata: { source, file, page: chunk.metadata.page },
       }))
     );
 

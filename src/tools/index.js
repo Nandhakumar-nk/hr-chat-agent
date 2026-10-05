@@ -119,7 +119,7 @@ const searchHRPolicyTool = tool(
 
     return JSON.stringify({
       query,
-      results: results.map((r) => ({ source: r.source, page: r.page, text: r.text })),
+      results: results.map((r) => ({ source: r.source, file: r.file, page: r.page, text: r.text })),
     });
   },
   {

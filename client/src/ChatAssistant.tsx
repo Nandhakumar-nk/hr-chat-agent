@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Chat } from "./Chat";
+import { ThemeToggle } from "./ThemeToggle";
 
 type Mode = "closed" | "drawer" | "full";
 
@@ -50,6 +51,7 @@ export function ChatAssistant() {
         <div className="chat-assistant-header">
           <span>HR Agent Assistant</span>
           <div className="chat-assistant-controls">
+            <ThemeToggle className="theme-toggle-chat" />
             {mode === "drawer" ? (
               <button onClick={() => setMode("full")} aria-label="Maximize" title="Maximize">
                 ⤢

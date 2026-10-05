@@ -1,10 +1,15 @@
 import "dotenv/config";
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import express from "express";
 import cors from "cors";
 
 import { router } from "./src/server/routes.js";
 import { ensureIndexed } from "./src/rag/index.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 try {
   await ensureIndexed();
@@ -27,6 +32,11 @@ const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(",") ?? true }));
 app.use(express.json());
 app.use("/api", router);
+
+// Serves the already-redacted, already-committed policy PDFs so the chat
+// UI's Sources links (client/src/Sources.tsx) can open the real source
+// document at the cited page - not employee data, so no auth needed.
+app.use("/policies", express.static(path.join(__dirname, "docs", "policies")));
 
 const port = process.env.PORT ?? 3001;
 app.listen(port, () => {

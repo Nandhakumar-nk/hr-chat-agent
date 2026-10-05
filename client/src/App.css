@@ -1,11 +1,44 @@
+/* Dark by default (see index.html's inline script + theme.ts for the
+   no-flash toggle); :root[data-theme="light"] below overrides every
+   token for the switchable light mode. Every color in this file reads
+   from one of these tokens - no new hardcoded colors below this block. */
+
 :root {
-  --border: #d9dde3;
-  --bg: #f7f8fa;
+  --bg: #0d0f14;
+  --chat-bg: #171a23;
+  --surface: #171a23;
+  --surface-2: #1f232e;
+  --border: #2b2f3a;
+  --text: #e8eaf0;
+  --text-muted: #9099ab;
   --accent: #f5811f;
   --accent-secondary: #e8505b;
-  --user-bubble: #f5811f;
+  --user-bubble: #8577f5;
+  --agent-bubble: #1f232e;
+  --error: #ff6b6b;
+  --success: #3ddc84;
+  --code-bg: #11141b;
+  --shadow-soft: rgba(0, 0, 0, 0.45);
+  --fab-glow: rgba(245, 129, 31, 0.45);
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f8fa;
+  --chat-bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f1f2f4;
+  --border: #d9dde3;
+  --text: #1b1f24;
+  --text-muted: #6b7280;
+  --accent: #f5811f;
+  --accent-secondary: #e8505b;
+  --user-bubble: #5b4fd6;
   --agent-bubble: #ffffff;
   --error: #b3261e;
+  --success: #1a7f37;
+  --code-bg: #f1f2f4;
+  --shadow-soft: rgba(0, 0, 0, 0.12);
+  --fab-glow: rgba(245, 129, 31, 0.25);
 }
 
 * {
@@ -16,7 +49,24 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);
-  color: #1b1f24;
+  color: var(--text);
+}
+
+body,
+.card,
+.dashboard-header,
+.sidebar,
+.sidebar-item,
+.login form,
+.bubble,
+.chat-assistant,
+.chat-fab-label,
+.activity-panel li,
+.sources a,
+.theme-toggle-fixed,
+.theme-toggle-inline {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 #root {
@@ -28,6 +78,8 @@ input {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.95rem;
+  background: var(--surface);
+  color: var(--text);
 }
 
 button {
@@ -40,6 +92,10 @@ button {
   cursor: pointer;
 }
 
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: default;
@@ -47,7 +103,7 @@ button:disabled {
 
 button.logout {
   background: none;
-  color: #6b7280;
+  color: var(--text-muted);
   border: 1px solid var(--border);
 }
 
@@ -57,8 +113,41 @@ button.logout {
 }
 
 .hint {
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+/* Theme toggle - contextual per screen rather than one global fixed
+   button, which would sit on top of the chat drawer's own header
+   controls whenever it's open. */
+
+.theme-toggle-fixed,
+.theme-toggle-inline {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.theme-toggle-fixed:hover,
+.theme-toggle-inline:hover {
+  filter: none;
+  color: var(--accent-secondary);
+}
+
+/* Login screen has no header, so this one floats in the corner */
+.theme-toggle-fixed {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  box-shadow: 0 2px 8px var(--shadow-soft);
 }
 
 /* Login */
@@ -89,7 +178,7 @@ button.logout {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 24px;
@@ -102,7 +191,7 @@ button.logout {
   flex-direction: column;
   gap: 6px;
   font-size: 0.85rem;
-  color: #4a5160;
+  color: var(--text-muted);
 }
 
 /* Dashboard layout */
@@ -118,7 +207,7 @@ button.logout {
   justify-content: space-between;
   align-items: center;
   padding: 10px 20px;
-  background: #fff;
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
@@ -144,7 +233,7 @@ button.logout {
 .sidebar {
   width: 200px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--surface);
   border-right: 1px solid var(--border);
   padding: 16px 8px;
   display: flex;
@@ -159,7 +248,7 @@ button.logout {
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 0.9rem;
-  color: #4a5160;
+  color: var(--text-muted);
   cursor: default;
 }
 
@@ -168,7 +257,7 @@ button.logout {
 }
 
 .sidebar-item.active {
-  background: color-mix(in srgb, var(--accent) 14%, white);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   font-weight: 600;
 }
@@ -191,11 +280,16 @@ button.logout {
 }
 
 .card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px 20px;
   border-top: 3px solid var(--accent);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px var(--shadow-soft);
 }
 
 .card h3 {
@@ -217,7 +311,7 @@ button.logout {
 }
 
 .card dt {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .card dd {
@@ -226,7 +320,7 @@ button.logout {
 }
 
 .status-active {
-  color: #1a7f37;
+  color: var(--success);
 }
 
 .status-notice_period {
@@ -251,7 +345,7 @@ button.logout {
 }
 
 .holiday-list .date {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 /* Chat (message list + input, reused inside ChatAssistant) */
@@ -303,7 +397,54 @@ button.logout {
 .message.agent .bubble {
   background: var(--agent-bubble);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  color: var(--text);
   border-bottom-left-radius: 2px;
+}
+
+/* "Agent is working" placeholder bubble, shown while a request is in flight */
+
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.4;
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots span {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /* Rendered markdown inside agent bubbles */
@@ -327,7 +468,7 @@ button.logout {
 }
 
 .markdown code {
-  background: #f1f2f4;
+  background: var(--code-bg);
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 0.85em;
@@ -355,13 +496,19 @@ button.logout {
   flex: 1;
 }
 
+.chat form button[type="submit"] {
+  background: linear-gradient(135deg, #f5811f, #e8505b, #d6409f, #7c4dff, #2f9bd6, #f5811f);
+  background-size: 400% 400%;
+  animation: fab-gradient 5s ease infinite;
+}
+
 /* Agent activity panel */
 
 .activity-panel {
   margin-top: 6px;
   max-width: 85%;
   font-size: 0.78rem;
-  color: #4a5160;
+  color: var(--text-muted);
 }
 
 .activity-panel summary {
@@ -382,12 +529,13 @@ button.logout {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: #fff;
+  background: var(--surface-2);
 }
 
 .tool-name {
   font-weight: 600;
   font-family: ui-monospace, monospace;
+  color: var(--text);
 }
 
 .activity-panel .args {
@@ -401,6 +549,34 @@ button.logout {
   white-space: pre-wrap;
   max-height: 160px;
   overflow-y: auto;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+}
+
+/* Clickable links back to the real policy PDFs a RAG answer cited */
+
+.sources {
+  margin-top: 6px;
+  max-width: 85%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sources a {
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  text-decoration: none;
+}
+
+.sources a:hover {
+  text-decoration: underline;
 }
 
 /* Floating HR Agent Assistant: FAB -> drawer -> full page */
@@ -416,14 +592,15 @@ button.logout {
 }
 
 .chat-fab-label {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   padding: 8px 14px;
   border-radius: 20px;
   font-size: 0.85rem;
   font-weight: 500;
   white-space: nowrap;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  color: var(--text);
+  box-shadow: 0 2px 10px var(--shadow-soft);
   animation:
     fab-label-in 0.4s ease-out,
     fab-label-bob 3s ease-in-out 1s infinite;
@@ -469,7 +646,7 @@ button.logout {
   );
   background-size: 400% 400%;
   animation: fab-gradient 5s ease infinite;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 14px var(--shadow-soft), 0 0 24px var(--fab-glow);
 }
 
 @keyframes fab-label-in {
@@ -520,16 +697,17 @@ button.logout {
 @media (prefers-reduced-motion: reduce) {
   .chat-fab-label,
   .chat-fab-ring,
-  .chat-fab {
+  .chat-fab,
+  .chat form button[type="submit"] {
     animation: none;
   }
 }
 
 .chat-assistant {
   position: fixed;
-  background: var(--bg);
+  background: var(--chat-bg);
   border-left: 1px solid var(--border);
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.12);
+  box-shadow: -2px 0 16px var(--shadow-soft);
   display: flex;
   flex-direction: column;
   z-index: 50;
@@ -552,14 +730,14 @@ button.logout {
   width: min(980px, 94vw);
   border-radius: 14px;
   border-left: 1px solid var(--border);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px var(--shadow-soft);
   overflow: hidden;
 }
 
 .chat-assistant-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(20, 20, 25, 0.45);
+  background: rgba(0, 0, 0, 0.55);
   z-index: 49;
 }
 

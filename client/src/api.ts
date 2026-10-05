@@ -103,3 +103,11 @@ export async function sendMessage(
   });
   return parseOrThrow(res);
 }
+
+// Links back to the real policy PDF a search_hr_policy result cited,
+// opened at the given page via the browser's own PDF viewer. Served
+// statically by server.js (see Sources.tsx).
+export function policyFileUrl(file: string, page?: number): string {
+  const base = `${API_BASE}/policies/${encodeURIComponent(file)}`;
+  return page ? `${base}#page=${page}` : base;
+}

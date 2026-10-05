@@ -2,6 +2,7 @@ import { Logo } from "./Logo";
 import { Sidebar } from "./Sidebar";
 import { ProfileCard, LeaveBalanceCard, UpcomingHolidaysCard } from "./Cards";
 import { ChatAssistant } from "./ChatAssistant";
+import { ThemeToggle } from "./ThemeToggle";
 import type { Employee } from "./api";
 
 export function Dashboard({ employee, onLogout }: { employee: Employee; onLogout: () => void }) {
@@ -16,6 +17,7 @@ export function Dashboard({ employee, onLogout }: { employee: Employee; onLogout
           <span>
             Logged in as <strong>{employee.name}</strong> ({employee.id})
           </span>
+          <ThemeToggle className="theme-toggle-inline" />
           <button className="logout" onClick={onLogout}>
             Log out
           </button>

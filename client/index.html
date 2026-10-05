@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HR Chat Agent</title>
+    <script>
+      // Dark by default; only switches before paint if the user had
+      // previously chosen light - avoids a flash of the wrong theme.
+      (function () {
+        try {
+          if (localStorage.getItem("hr-chat-theme") === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

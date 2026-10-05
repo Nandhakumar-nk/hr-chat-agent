@@ -67,6 +67,7 @@ export async function queryChunks(queryEmbedding, k) {
   return documents.map((text, i) => ({
     text,
     source: metadatas[i]?.source,
+    file: metadatas[i]?.file,
     page: metadatas[i]?.page,
   }));
 }

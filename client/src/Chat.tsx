@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { sendMessage, type ChatMessage } from "./api";
 import { ActivityPanel } from "./ActivityPanel";
+import { Sources } from "./Sources";
 import { Markdown } from "./Markdown";
 
 // The message list + input only - no header/logout here. Used inside
@@ -11,6 +12,13 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Keep the latest message in view - the list had no scroll management
+  // at all before, so a reply below the fold went unnoticed.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, sending]);
 
   async function handleSend(e: FormEvent) {
     e.preventDefault();
@@ -35,22 +43,35 @@ export function Chat() {
   return (
     <div className="chat">
       <div className="messages">
-        {messages.length === 0 && (
-          <p className="hint">Ask about your leave balance, policy, or eligibility.</p>
-        )}
+        {/* Permanent first message, not part of `messages` - always
+            shown, never sent to the API. */}
+        <div className="message agent">
+          <div className="bubble">
+            Hi, I'm your HR Assistant 👋 I can help with leave balances, HR policy (leave, benefits, staff
+            loan, WFH), or eligibility checks. What can I help you with today?
+          </div>
+        </div>
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
             <div className="bubble">
               {m.role === "agent" ? <Markdown>{m.text}</Markdown> : m.text}
             </div>
+            {m.role === "agent" && m.toolActivity && <Sources activity={m.toolActivity} />}
             {m.role === "agent" && m.toolActivity && <ActivityPanel activity={m.toolActivity} />}
           </div>
         ))}
         {sending && (
           <div className="message agent">
-            <div className="bubble">...</div>
+            <div className="bubble">
+              <span className="typing-dots">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
           </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -59,7 +80,7 @@ export function Chat() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about your leave..."
+          placeholder="Ask about leave, benefits, loans, WFH..."
           autoFocus
         />
         <button type="submit" disabled={sending}>
