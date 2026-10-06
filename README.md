@@ -2,6 +2,12 @@
 
 An HR chat agent built with LangChain JS and Google Gemini, developed step by step.
 
+## Demo
+
+<video src="demo/hr-chat-agent-demo.mp4" controls width="720"></video>
+
+[Watch the demo video](demo/hr-chat-agent-demo.mp4) (captions: [demo/hr-chat-agent-demo.captions.srt](demo/hr-chat-agent-demo.captions.srt)) - the architecture first (diagram walkthrough), then the live app: traditional sidebar tabs through to light mode, the chat agent in full mode, a happy path (a leave date-range calculation that excludes a weekend and a public holiday, a context-aware follow-up extending that range, a database-backed balance check in the same conversation, and a maternity-leave policy question answered with a RAG citation), and two negative paths (a cross-employee data request declined, and a leave request exceeding the available balance correctly declined).
+
 ## Architecture
 
 ### Diagram
