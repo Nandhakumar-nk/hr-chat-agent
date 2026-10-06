@@ -1,0 +1,51 @@
+# One command for the whole stack: docker compose up --build
+# (needs a real .env first - cp .env.example .env, then fill in
+# GOOGLE_API_KEY and JWT_SECRET).
+#
+# This is also the deployment artifact for a real VPS: copy the repo
+# and a real .env over, run the same command. The one thing to change
+# for a real deployment is the client's VITE_API_URL build arg below -
+# it's baked in at build time, so it needs the server's real public
+# URL instead of localhost.
+
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma-data:/chroma/chroma
+    ports:
+      - "8000:8000"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      # Compose's internal DNS resolves service names - this overrides
+      # whatever .env has, regardless of what it's set to there.
+      - CHROMA_URL=http://chroma:8000
+    depends_on:
+      - chroma
+    ports:
+      - "3001:3001"
+    volumes:
+      - sqlite-data:/app/data
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # Change this to the real public API URL for a VPS deployment -
+        # localhost is only correct when both containers run on the
+        # same machine as the browser.
+        VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  chroma-data:
+  sqlite-data:

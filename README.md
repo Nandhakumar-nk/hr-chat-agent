@@ -326,6 +326,23 @@ Log in with any seeded employee/password pair above.
 
 **Deploying the frontend and backend to different places for real**: the same two variables used above are exactly what that needs. `client/src/api.ts` reads `VITE_API_URL` (change it in `client/.env`, or set it when building, to the real backend's URL); `server.js` reads `CORS_ORIGIN` (unset = any origin allowed, fine on localhost, not once this leaves your machine) - set it to the real frontend's URL. See `client/.env.example` and `.env.example`.
 
+## Deploying
+
+Two ready-made paths, both committed to this repo. Neither stores real secrets (`GOOGLE_API_KEY`, `JWT_SECRET`) in the repo - both prompt for them separately.
+
+**Docker Compose** - one command runs all 3 services (Chroma, the API, the frontend) together, verified working end-to-end locally:
+
+```bash
+cp .env.example .env   # fill in GOOGLE_API_KEY and JWT_SECRET
+docker compose up --build
+```
+
+This is also the deployment artifact for a real VPS (DigitalOcean, Hetzner, Lightsail, or similar) - copy the repo and a real `.env` over, run the same command. The one thing to change for a real deployment is `docker-compose.yml`'s `client` build arg `VITE_API_URL` - it's baked in at build time, so it needs the server's real public URL instead of `localhost`. SQLite and Chroma both persist in named Docker volumes, so data survives restarts here (unlike the Render path below).
+
+**Render Blueprint** - a genuinely free, no-VPS-cost alternative (`render.yaml`, also provisions all 3 services): sign up at [render.com](https://render.com), "New" -> "Blueprint", point it at this repo. Render reads `render.yaml` and prompts for `GOOGLE_API_KEY`/`JWT_SECRET` during setup. This is a first-pass config, not live-verified against Render's current schema - if a field doesn't match what Render's UI expects, the fallback is creating the 3 services manually ("New Web Service" / "New Static Site") using the same build/start commands the file specifies. Free-tier caveat: the two web services (Chroma, the API) spin down after 15 minutes idle and take ~30-60s to cold-start on the next request; SQLite and Chroma's data reset to the seeded demo state on restart (no real data to lose - fine for a demo, not for production).
+
+Other Docker-Compose-capable hosts (Railway, Fly.io, any VPS provider) work the same way as the VPS path above, since `docker-compose.yml` is the portable piece.
+
 ## Known limitations (next steps)
 
 - No tool reads `leave_history` yet (a future eligibility refinement).

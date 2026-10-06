@@ -1,0 +1,58 @@
+# Render Blueprint - a free, no-VPS-cost alternative to docker-compose.yml.
+# Deploy: sign up at render.com, "New" -> "Blueprint", point it at this
+# repo. Render reads this file and provisions all 3 services; it'll
+# prompt for GOOGLE_API_KEY and JWT_SECRET during setup (marked
+# sync: false below so real secrets never live in the repo).
+#
+# First-pass config, not live-verified against Render's current schema -
+# if a field name here doesn't match what Render's UI expects, the
+# fallback is to create the 3 services manually via "New -> Web Service"
+# / "New -> Static Site", using the same build/start commands below.
+#
+# Free-tier caveat: the 2 web services (chroma, api) spin down after 15
+# minutes idle and take ~30-60s to cold-start on the next request.
+
+services:
+  - type: web
+    name: hr-chat-agent-chroma
+    runtime: image
+    image:
+      url: docker.io/chromadb/chroma:latest
+    envVars:
+      - key: PORT
+        value: 8000
+
+  - type: web
+    name: hr-chat-agent-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: CHROMA_URL
+        fromService:
+          name: hr-chat-agent-chroma
+          type: web
+          property: hostport
+      - key: CORS_ORIGIN
+        fromService:
+          name: hr-chat-agent-client
+          type: web
+          property: host
+
+  - type: web
+    name: hr-chat-agent-client
+    runtime: static
+    buildCommand: cd client && npm install && npm run build
+    staticPublishPath: client/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: hr-chat-agent-api
+          type: web
+          property: host
