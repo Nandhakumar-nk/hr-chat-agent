@@ -1,0 +1,103 @@
+1
+00:00:00,013 --> 00:00:06,812
+Before the walkthrough - here's the full architecture.
+
+2
+00:00:06,823 --> 00:00:10,827
+The Client Tier: a CLI terminal and a React browser app, both reaching the same backend.
+
+3
+00:00:10,831 --> 00:00:16,332
+Every request flows through Entry Points, then Auth and Session - identity comes from a session token, never from the model.
+
+4
+00:00:16,334 --> 00:00:23,342
+Agent Orchestration is a LangGraph graph - steps 1 to 8 loop: ask, maybe run a tool, repeat.
+
+5
+00:00:23,347 --> 00:00:30,354
+Business Logic holds the 8 tools. Data Access reaches SQLite and Chroma for RAG.
+
+6
+00:00:30,358 --> 00:00:34,860
+Google Gemini is the one external service - used for both chat and the embeddings that power RAG.
+
+7
+00:00:34,866 --> 00:00:39,321
+Now let's see it running.
+
+8
+00:00:39,331 --> 00:00:41,914
+Logging in as Asha Rao.
+
+9
+00:00:41,921 --> 00:00:44,831
+The traditional way: a dedicated tab per data type.
+
+10
+00:00:44,842 --> 00:00:47,431
+Leave History.
+
+11
+00:00:47,434 --> 00:00:49,987
+Holidays.
+
+12
+00:00:49,993 --> 00:00:52,695
+And Policies.
+
+13
+00:00:52,737 --> 00:00:55,632
+Back to Home - your profile.
+
+14
+00:00:55,635 --> 00:00:59,871
+Switchable to light mode.
+
+15
+00:00:59,876 --> 00:01:02,560
+Now, the chat agent - in full mode.
+
+16
+00:01:02,562 --> 00:01:09,760
+Starting with the happy path.
+
+17
+00:01:09,761 --> 00:01:17,299
+A simple tool call - calculate_leave_days. The range includes a weekend and a public holiday, both excluded automatically.
+
+18
+00:01:17,308 --> 00:01:24,729
+The Agent Activity panel shows exactly which tool ran.
+
+19
+00:01:24,738 --> 00:01:36,584
+A context-aware follow-up - it remembers the original start date without being told again.
+
+20
+00:01:36,586 --> 00:01:47,147
+And now a database-backed check - get_leave_balance - still in the same conversation.
+
+21
+00:01:47,150 --> 00:01:55,209
+This is RAG: search_hr_policy embeds the question, searches the vector store, and retrieves the real passage.
+
+22
+00:01:55,211 --> 00:01:58,296
+The Sources link cites exactly where that answer came from.
+
+23
+00:01:58,298 --> 00:02:04,128
+Now, two things it should get right by saying no.
+
+24
+00:02:04,130 --> 00:02:15,679
+Asking for another employee's data - an authorization failure, on purpose.
+
+25
+00:02:15,682 --> 00:02:23,787
+Requesting more days than the balance allows - check_leave_eligibility correctly declines.
+
+26
+00:02:23,790 --> 00:02:26,791
+That's the HR Chat Agent, end to end.
