@@ -34,6 +34,19 @@ export interface Holiday {
   name: string;
 }
 
+export interface LeaveHistoryEntry {
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+}
+
+export interface PolicyDoc {
+  source: string;
+  file: string;
+  description: string;
+}
+
 // Base URL of the API - see client/.env.example. Required in every mode
 // (dev, preview, deployed); there's no same-origin fallback.
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
@@ -91,6 +104,18 @@ export async function getHolidays(): Promise<Holiday[]> {
   const res = await fetch(`${API_BASE}/api/holidays`, { headers: authHeaders() });
   const data = await parseOrThrow(res);
   return data.holidays;
+}
+
+export async function getLeaveHistory(): Promise<LeaveHistoryEntry[]> {
+  const res = await fetch(`${API_BASE}/api/leave-history`, { headers: authHeaders() });
+  const data = await parseOrThrow(res);
+  return data.history;
+}
+
+export async function getPolicies(): Promise<PolicyDoc[]> {
+  const res = await fetch(`${API_BASE}/api/policies`, { headers: authHeaders() });
+  const data = await parseOrThrow(res);
+  return data.policies;
 }
 
 export async function sendMessage(

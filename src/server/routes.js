@@ -7,8 +7,9 @@ import { Router } from "express";
 import { login, requireAuth } from "./auth.js";
 import { getConversation } from "./conversations.js";
 import { getCurrentEmployeeId } from "../session.js";
-import { getEmployee, getLeaveBalance, listHolidays } from "../db/repository.js";
+import { getEmployee, getLeaveBalance, listHolidays, getLeaveHistory } from "../db/repository.js";
 import { runAgentTurn } from "../agent.js";
+import { POLICY_DOCUMENTS } from "../rag/index.js";
 
 export const router = Router();
 
@@ -65,6 +66,27 @@ router.get("/leave-balance", requireAuth, (req, res) => {
 
 router.get("/holidays", requireAuth, (req, res) => {
   res.json({ holidays: listHolidays() });
+});
+
+router.get("/leave-history", requireAuth, (req, res) => {
+  const history = getLeaveHistory(getCurrentEmployeeId());
+  res.json({
+    history: history.map((h) => ({
+      leaveType: h.leave_type,
+      startDate: h.start_date,
+      endDate: h.end_date,
+      status: h.status,
+    })),
+  });
+});
+
+// Static list of the policy documents search_hr_policy indexes - lets
+// the Policies tab link to the same PDFs without hand-duplicating the
+// list anywhere in the frontend.
+router.get("/policies", requireAuth, (req, res) => {
+  res.json({
+    policies: POLICY_DOCUMENTS.map(({ source, file, description }) => ({ source, file, description })),
+  });
 });
 
 router.post("/chat", requireAuth, async (req, res) => {

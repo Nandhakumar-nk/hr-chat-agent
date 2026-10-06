@@ -1,11 +1,22 @@
+import { useState } from "react";
 import { Logo } from "./Logo";
-import { Sidebar } from "./Sidebar";
-import { ProfileCard, LeaveBalanceCard, UpcomingHolidaysCard } from "./Cards";
+import { Sidebar, type Tab } from "./Sidebar";
+import { ProfileCard, LeaveBalanceCard, HolidaysCard, LeaveHistoryCard, PoliciesCard } from "./Cards";
 import { ChatAssistant } from "./ChatAssistant";
 import { ThemeToggle } from "./ThemeToggle";
 import type { Employee } from "./api";
 
+const TITLES: Record<Tab, string> = {
+  home: "Your Profile",
+  balance: "Leave Balance",
+  history: "Leave History",
+  holidays: "Public Holidays",
+  policies: "HR Policies",
+};
+
 export function Dashboard({ employee, onLogout }: { employee: Employee; onLogout: () => void }) {
+  const [tab, setTab] = useState<Tab>("home");
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -25,14 +36,16 @@ export function Dashboard({ employee, onLogout }: { employee: Employee; onLogout
       </header>
 
       <div className="dashboard-body">
-        <Sidebar />
+        <Sidebar active={tab} onSelect={setTab} />
 
         <main className="dashboard-main">
-          <h1>Welcome, {employee.name.split(" ")[0]}!</h1>
+          <h1>{TITLES[tab]}</h1>
           <div className="cards">
-            <ProfileCard employee={employee} />
-            <LeaveBalanceCard />
-            <UpcomingHolidaysCard />
+            {tab === "home" && <ProfileCard employee={employee} />}
+            {tab === "balance" && <LeaveBalanceCard />}
+            {tab === "history" && <LeaveHistoryCard />}
+            {tab === "holidays" && <HolidaysCard />}
+            {tab === "policies" && <PoliciesCard />}
           </div>
         </main>
       </div>

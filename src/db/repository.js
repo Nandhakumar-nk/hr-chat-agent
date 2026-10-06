@@ -18,6 +18,12 @@ export function listHolidays() {
   return db.prepare("SELECT * FROM holidays ORDER BY date").all();
 }
 
+export function getLeaveHistory(employeeId) {
+  return db
+    .prepare("SELECT * FROM leave_history WHERE employee_id = ? ORDER BY start_date DESC")
+    .all(employeeId);
+}
+
 export function getActiveLoan(employeeId) {
   return (
     db

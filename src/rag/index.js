@@ -22,15 +22,35 @@ const POLICIES_DIR = path.join(__dirname, "..", "..", "docs", "policies");
 
 // holiday-list-2026.pdf is deliberately not here - it's hand-seeded into
 // the holidays table (src/db/seed.js), not retrieved via RAG.
-const POLICY_DOCUMENTS = [
-  { file: "leave-policy.pdf", source: "Leave Policy", idPrefix: "leave-policy" },
+//
+// Exported for the Policies tab (src/server/routes.js's GET /policies) -
+// the single source of truth for which PDFs exist, so the frontend never
+// hand-duplicates this list.
+export const POLICY_DOCUMENTS = [
+  {
+    file: "leave-policy.pdf",
+    source: "Leave Policy",
+    idPrefix: "leave-policy",
+    description: "Casual/Sick/Earned/Privilege leave rules, carry-forward, and encashment.",
+  },
   {
     file: "Employee Benefits Policy - Newly Wed_Newborn.pdf",
     source: "Employee Benefits Policy",
     idPrefix: "employee-benefits",
+    description: "Wedding and newborn gift vouchers.",
   },
-  { file: "Staff Loan Policy - 2025.pdf", source: "Staff Loan Policy", idPrefix: "staff-loan" },
-  { file: "Work from Home - Hybrid Policy.pdf", source: "Work from Home Policy", idPrefix: "wfh-policy" },
+  {
+    file: "Staff Loan Policy - 2025.pdf",
+    source: "Staff Loan Policy",
+    idPrefix: "staff-loan",
+    description: "Staff loan eligibility, amounts, and repayment terms.",
+  },
+  {
+    file: "Work from Home - Hybrid Policy.pdf",
+    source: "Work from Home Policy",
+    idPrefix: "wfh-policy",
+    description: "WFH/hybrid eligibility and the weekly day quota.",
+  },
 ];
 
 export async function ensureIndexed() {

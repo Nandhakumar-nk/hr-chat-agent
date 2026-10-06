@@ -1,9 +1,23 @@
-// Dashboard info cards - each fetches its own data directly from the
+// One card per sidebar tab - each fetches its own data directly from the
 // REST endpoints (no LLM involved), the same "fast, deterministic read"
-// reasoning as the backend's /api/leave-balance and /api/holidays.
+// reasoning as the backend's tool-less GET routes. This is deliberately
+// the "traditional app" side of the contrast with the chat agent: each
+// one is a dedicated page for a single piece of data the agent can also
+// just answer in conversation.
 
 import { useEffect, useState } from "react";
-import { getLeaveBalance, getHolidays, type Employee, type LeaveBalance, type Holiday } from "./api";
+import {
+  getLeaveBalance,
+  getHolidays,
+  getLeaveHistory,
+  getPolicies,
+  policyFileUrl,
+  type Employee,
+  type LeaveBalance,
+  type Holiday,
+  type LeaveHistoryEntry,
+  type PolicyDoc,
+} from "./api";
 
 export function ProfileCard({ employee }: { employee: Employee }) {
   return (
@@ -73,7 +87,9 @@ export function LeaveBalanceCard() {
   );
 }
 
-export function UpcomingHolidaysCard() {
+// Full list - a dedicated tab shows everything, not the dashboard
+// widget's "next few upcoming" truncation.
+export function HolidaysCard() {
   const [holidays, setHolidays] = useState<Holiday[] | null>(null);
 
   useEffect(() => {
@@ -82,19 +98,16 @@ export function UpcomingHolidaysCard() {
       .catch(() => setHolidays([]));
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const upcoming = (holidays ?? []).filter((h) => h.date >= today).slice(0, 4);
-
   return (
     <div className="card">
-      <h3>Upcoming Holidays</h3>
+      <h3>Public Holidays</h3>
       {!holidays ? (
         <p className="hint">Loading...</p>
-      ) : upcoming.length === 0 ? (
-        <p className="hint">No upcoming holidays this year.</p>
+      ) : holidays.length === 0 ? (
+        <p className="hint">No holidays found.</p>
       ) : (
         <ul className="holiday-list">
-          {upcoming.map((h) => (
+          {holidays.map((h) => (
             <li key={h.date}>
               <span>{h.name}</span>
               <span className="date">
@@ -108,5 +121,71 @@ export function UpcomingHolidaysCard() {
         </ul>
       )}
     </div>
+  );
+}
+
+export function LeaveHistoryCard() {
+  const [history, setHistory] = useState<LeaveHistoryEntry[] | null>(null);
+
+  useEffect(() => {
+    getLeaveHistory()
+      .then(setHistory)
+      .catch(() => setHistory([]));
+  }, []);
+
+  return (
+    <div className="card">
+      <h3>Leave History</h3>
+      {!history ? (
+        <p className="hint">Loading...</p>
+      ) : history.length === 0 ? (
+        <p className="hint">No past leave requests.</p>
+      ) : (
+        <ul className="holiday-list">
+          {history.map((h, i) => (
+            <li key={i}>
+              <span>
+                {h.leaveType} &middot; {h.startDate} to {h.endDate}
+              </span>
+              <span className={`leave-status leave-status-${h.status}`}>{h.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function PoliciesCard() {
+  const [policies, setPolicies] = useState<PolicyDoc[] | null>(null);
+
+  useEffect(() => {
+    getPolicies()
+      .then(setPolicies)
+      .catch(() => setPolicies([]));
+  }, []);
+
+  if (!policies) {
+    return (
+      <div className="card">
+        <h3>HR Policies</h3>
+        <p className="hint">Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {policies.map((p) => (
+        <div className="card" key={p.file}>
+          <h3>
+            <a href={policyFileUrl(p.file)} target="_blank" rel="noreferrer">
+              {p.source}
+            </a>
+          </h3>
+          <p className="hint">{p.description}</p>
+        </div>
+      ))}
+    </>
   );
 }
