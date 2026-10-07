@@ -18,6 +18,19 @@
 # every native runtime (Node, Python, static) is free-tier eligible.
 # `plan: free` is pinned explicitly on all 3 services below so none of
 # them silently default to a paid instance type again.
+#
+# Cross-service URLs (CHROMA_URL, CORS_ORIGIN, VITE_API_URL) are literal
+# public https://<service-name>.onrender.com values, not `fromService`
+# private-network references - confirmed live-broken two ways: (1) free
+# web services can send private-network traffic but can't receive it, so
+# hr-chat-agent-chroma (free) could never accept hr-chat-agent-api's
+# private connection regardless of hostname format; (2) `property: host`
+# only ever returns the private hostname anyway, which is useless for
+# CORS_ORIGIN (must match the browser's public Origin header) and
+# VITE_API_URL (baked into frontend JS that runs in the user's browser,
+# which can't reach Render's private network at all). Render gives no
+# fromService property for a service's public URL, so these are hardcoded
+# from the service `name`s below - rename a service and update these too.
 
 services:
   - type: web
@@ -41,15 +54,9 @@ services:
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
       - key: CHROMA_URL
-        fromService:
-          name: hr-chat-agent-chroma
-          type: web
-          property: hostport
+        value: https://hr-chat-agent-chroma.onrender.com
       - key: CORS_ORIGIN
-        fromService:
-          name: hr-chat-agent-client
-          type: web
-          property: host
+        value: https://hr-chat-agent-client.onrender.com
 
   - type: web
     name: hr-chat-agent-client
@@ -58,7 +65,4 @@ services:
     staticPublishPath: client/dist
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: hr-chat-agent-api
-          type: web
-          property: host
+        value: https://hr-chat-agent-api.onrender.com
