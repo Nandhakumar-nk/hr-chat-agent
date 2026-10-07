@@ -24,6 +24,37 @@ export function getLeaveHistory(employeeId) {
     .all(employeeId);
 }
 
+// Records an auto-approved leave request: inserts the history row and
+// deducts the balance in one transaction, so a request is never written
+// without its matching deduction (or vice versa). `balanceColumn` is
+// interpolated directly into the UPDATE - SQLite can't parameterize
+// column names - but it's always one of the 4 fixed, hardcoded columns
+// from src/tools/index.js's LEAVE_TYPE_TO_BALANCE_FIELD map, keyed by a
+// zod-validated 4-value enum, never raw input.
+export function recordApprovedLeave(employeeId, leaveType, startDate, endDate, balanceColumn, requestedDays) {
+  db.exec("BEGIN");
+  try {
+    const insert = db
+      .prepare(
+        "INSERT INTO leave_history (employee_id, leave_type, start_date, end_date, status) VALUES (?, ?, ?, ?, 'approved')"
+      )
+      .run(employeeId, leaveType, startDate, endDate);
+
+    db.prepare(`UPDATE leave_balances SET ${balanceColumn} = ${balanceColumn} - ? WHERE employee_id = ?`).run(
+      requestedDays,
+      employeeId
+    );
+
+    const balance = db.prepare("SELECT * FROM leave_balances WHERE employee_id = ?").get(employeeId);
+
+    db.exec("COMMIT");
+    return { id: insert.lastInsertRowid, balance };
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
 export function getActiveLoan(employeeId) {
   return (
     db

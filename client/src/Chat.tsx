@@ -49,7 +49,7 @@ export function Chat() {
         <div className="message agent">
           <div className="bubble">
             Hi, I'm your HR Assistant 👋 I can help with leave balances, HR policy (leave, benefits, staff
-            loan, WFH), or eligibility checks. What can I help you with today?
+            loan, WFH), eligibility checks, or submitting a leave request. What can I help you with today?
           </div>
         </div>
         {messages.map((m, i) => (

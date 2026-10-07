@@ -13,6 +13,7 @@ import {
   getActiveLoan,
   getLastClosedLoan,
   countLoansInFinancialYear,
+  recordApprovedLeave,
 } from "../db/repository.js";
 import { retrieve } from "../rag/index.js";
 import { getCurrentEmployeeId } from "../session.js";
@@ -187,54 +188,65 @@ const LEAVE_TYPE_TO_BALANCE_FIELD = {
   PL: "privilege_leave",
 };
 
+// Shared by check_leave_eligibility and submit_leave_request, so both give
+// identical verdicts from one source of truth instead of two copies that
+// could drift. submit_leave_request calls this again right before writing,
+// even though the conversation should already have checked - a defense in
+// depth guard against a confirmed-but-actually-ineligible request (the
+// model skipped the check, or the balance changed between turns).
+function evaluateLeaveEligibility(employeeId, leaveType, startDate, endDate) {
+  const employee = getEmployee(employeeId);
+  if (!employee) {
+    return { error: `No employee found with id ${employeeId}` };
+  }
+
+  const requestedDays = countWorkingDays(startDate, endDate);
+
+  // Per policy (leave-policy.pdf, section 5): employees serving notice
+  // period cannot take CL, SL, EL or PL, regardless of balance. This
+  // check is why check_leave_eligibility exists - left to its own
+  // judgment, the model doesn't reliably remember to look up employment
+  // status (see CLAUDE.md's "Current limitations" / the plan's tested
+  // evidence).
+  if (employee.status === "notice_period") {
+    return {
+      eligible: false,
+      reason: `Employee is serving notice period; ${leaveType} cannot be availed during notice period, regardless of balance.`,
+      leaveType,
+      requestedDays,
+      employeeStatus: employee.status,
+    };
+  }
+
+  const balance = getLeaveBalance(employeeId);
+  if (!balance) {
+    return { error: `No leave balance found for employee ${employeeId}` };
+  }
+
+  const balanceField = LEAVE_TYPE_TO_BALANCE_FIELD[leaveType];
+  const availableBalance = balance[balanceField];
+  const eligible = requestedDays <= availableBalance;
+
+  return {
+    eligible,
+    reason: eligible
+      ? `Sufficient ${leaveType} balance for the requested ${requestedDays} day(s).`
+      : `Requested ${requestedDays} day(s) exceeds available ${leaveType} balance of ${availableBalance}.`,
+    leaveType,
+    requestedDays,
+    availableBalance,
+    balanceField,
+    employeeStatus: employee.status,
+  };
+}
+
 const checkLeaveEligibilityTool = tool(
   async ({ leaveType, startDate, endDate }) => {
     console.log("\n🛠 check_leave_eligibility tool executed");
 
-    // Same rule as the other self-service tools: the ID comes from the
-    // session, never from a model argument.
     const employeeId = getCurrentEmployeeId();
-    const employee = getEmployee(employeeId);
-    if (!employee) {
-      return JSON.stringify({ error: `No employee found with id ${employeeId}` });
-    }
-
-    const requestedDays = countWorkingDays(startDate, endDate);
-
-    // Per policy (leave-policy.pdf, section 5): employees serving notice
-    // period cannot take CL, SL, EL or PL, regardless of balance. This
-    // check is why this tool exists - left to its own judgment, the model
-    // doesn't reliably remember to look up employment status (see
-    // CLAUDE.md's "Current limitations" / the plan's tested evidence).
-    if (employee.status === "notice_period") {
-      return JSON.stringify({
-        eligible: false,
-        reason: `Employee is serving notice period; ${leaveType} cannot be availed during notice period, regardless of balance.`,
-        leaveType,
-        requestedDays,
-        employeeStatus: employee.status,
-      });
-    }
-
-    const balance = getLeaveBalance(employeeId);
-    if (!balance) {
-      return JSON.stringify({ error: `No leave balance found for employee ${employeeId}` });
-    }
-
-    const balanceField = LEAVE_TYPE_TO_BALANCE_FIELD[leaveType];
-    const availableBalance = balance[balanceField];
-    const eligible = requestedDays <= availableBalance;
-
-    return JSON.stringify({
-      eligible,
-      reason: eligible
-        ? `Sufficient ${leaveType} balance for the requested ${requestedDays} day(s).`
-        : `Requested ${requestedDays} day(s) exceeds available ${leaveType} balance of ${availableBalance}.`,
-      leaveType,
-      requestedDays,
-      availableBalance,
-      employeeStatus: employee.status,
-    });
+    const result = evaluateLeaveEligibility(employeeId, leaveType, startDate, endDate);
+    return JSON.stringify(result);
   },
   {
     name: "check_leave_eligibility",
@@ -246,6 +258,72 @@ const checkLeaveEligibilityTool = tool(
       leaveType: z.enum(["CL", "SL", "EL", "PL"]),
       startDate: z.string().describe("Start date, format YYYY-MM-DD"),
       endDate: z.string().describe("End date, format YYYY-MM-DD"),
+    }),
+  }
+);
+
+const submitLeaveRequestTool = tool(
+  async ({ leaveType, startDate, endDate, confirmed }) => {
+    console.log("\n🛠 submit_leave_request tool executed");
+
+    if (confirmed !== true) {
+      return JSON.stringify({
+        submitted: false,
+        reason:
+          "Not submitted: this tool only runs with confirmed=true. State the exact leave type, date range and that confirming means immediate approval and an immediate balance deduction, then ask the employee to explicitly confirm before calling this again.",
+      });
+    }
+
+    const employeeId = getCurrentEmployeeId();
+
+    // Re-verify eligibility server-side even though the conversation
+    // should already have checked - see evaluateLeaveEligibility's comment.
+    const verdict = evaluateLeaveEligibility(employeeId, leaveType, startDate, endDate);
+    if (verdict.error) {
+      return JSON.stringify(verdict);
+    }
+    if (!verdict.eligible) {
+      return JSON.stringify({ submitted: false, ...verdict });
+    }
+
+    const { id, balance } = recordApprovedLeave(
+      employeeId,
+      leaveType,
+      startDate,
+      endDate,
+      verdict.balanceField,
+      verdict.requestedDays
+    );
+
+    return JSON.stringify({
+      submitted: true,
+      requestId: id,
+      leaveType,
+      startDate,
+      endDate,
+      requestedDays: verdict.requestedDays,
+      status: "approved",
+      updatedBalance: {
+        casualLeave: balance.casual_leave,
+        sickLeave: balance.sick_leave,
+        earnedLeave: balance.earned_leave,
+        privilegeLeave: balance.privilege_leave,
+      },
+    });
+  },
+  {
+    name: "submit_leave_request",
+
+    description:
+      "Submit a leave request for the authenticated employee - the only tool that writes data, not just reads it. Requires confirmed=true, which must only be set after the employee has explicitly confirmed the exact leave type, date range, and that confirming means IMMEDIATE approval and an IMMEDIATE balance deduction (there is no separate approval step in this system) - never set confirmed=true on the first ask. If confirmed, this re-checks eligibility itself and refuses to write if the employee is actually ineligible (e.g. notice period, insufficient balance). There is no employeeId parameter - this always acts on the logged-in employee, never another employee.",
+
+    schema: z.object({
+      leaveType: z.enum(["CL", "SL", "EL", "PL"]),
+      startDate: z.string().describe("Start date, format YYYY-MM-DD"),
+      endDate: z.string().describe("End date, format YYYY-MM-DD"),
+      confirmed: z
+        .boolean()
+        .describe("Must be true, and only true after the employee explicitly confirmed this exact request."),
     }),
   }
 );
@@ -369,4 +447,5 @@ export const toolsByName = {
   check_leave_eligibility: checkLeaveEligibilityTool,
   check_wfh_eligibility: checkWfhEligibilityTool,
   check_loan_eligibility: checkLoanEligibilityTool,
+  submit_leave_request: submitLeaveRequestTool,
 };
