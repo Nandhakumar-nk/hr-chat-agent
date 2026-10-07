@@ -68,6 +68,20 @@ Three tiers: the **Client Tier** (the CLI terminal and the React browser UI, bot
 
 The numbered edges are not incidental - they are the actual order of execution for one turn, including the loop. Take a policy question like "how many days of earned leave carry forward to next year?": (1) Presentation sends the question to Orchestration, which (2) asks Gemini. Gemini's reply comes back as (3) `tool_calls or answer` - here, a call to `search_hr_policy` - so Orchestration sends (4) `run tool` into Business Logic, which (5) calls Data Access. Data Access (6a) retrieves against Chroma, embedding the query via Gemini first, or (6b) reads SQLite directly, depending on which tool ran. The result returns as (7) a dotted `tool result` loop back to Orchestration - which may repeat from (2), asking Gemini again, if the question needs another tool (the same LangGraph cycle step 6's `check_leave_eligibility` relies on when it needs balance, policy and date-calculation results together). Only once the model stops requesting tools does Orchestration send (8) the final answer back to Presentation, citing the policy page.
 
+At a higher level, the LLM's actual job in this architecture is narrower than it might first appear - employee data, policy retrieval and date/eligibility math are each delegated to a dedicated subsystem, leaving the model to understand the question and orchestrate between them:
+
+```text
+                     LLM
+                      │
+              Understand + orchestrate
+                      │
+         ┌────────────┼─────────────┐
+         ↓            ↓             ↓
+       SQLite       Chroma      Business tools
+         ↓            ↓             ↓
+       Facts        Policy      Calculations
+```
+
 ### Framework choices
 
 Each choice below names what that tool specializes in relative to its alternatives, why that specialization matches this project's actual workload, and the honest trade-off where one exists.
@@ -81,6 +95,25 @@ Each choice below names what that tool specializes in relative to its alternativ
 - **Express + JWT** - Express specializes in minimal, unopinionated HTTP routing without an enforced architecture, fitting a handful of endpoints rather than needing a heavier full-stack framework's scaffolding. JWT specializes in stateless, self-contained identity - verifiable without a shared session store - which fits an API meant to stay horizontally scalable (no central session store required; `AsyncLocalStorage` resolves identity per-request, in-process). Already genuinely production-appropriate, as the concurrency test demonstrated - no trade-off to accept here.
 - **React + TypeScript + Vite** - React specializes in component-based, stateful interactive UIs, fitting the dashboard's non-trivial client state (chat history, FAB/drawer/full modes, multiple live data cards) better than simpler templating built for mostly-static pages. TypeScript specializes in catching type errors at compile time, valuable given the API response shapes flowing through this state. Vite specializes in fast, minimal-config dev tooling for a single-page app - fitting this project better than a heavier meta-framework (e.g. Next.js) whose specialization (server-side rendering, file-based routing) this single-page dashboard doesn't use.
 
+#### Why this model: Gemini Flash
+
+The model was evaluated against this HR agent's actual requirements rather than by simply picking the largest model available. The evaluation criteria were reliable tool-calling, instruction-following, RAG-grounded response generation, context handling, latency, cost, and integration with this project's Node.js/LangChain stack. As the Architecture section's diagram above shows, facts, policy and calculations are each handled by a dedicated tool rather than the model itself, so the LLM's role is primarily orchestration and response generation - exactly the profile a low-latency Flash-tier model is built for, as opposed to a frontier/reasoning-tier model specialized for deeper, more expensive completions this workload doesn't need.
+
+| Capability | Rating |
+|---|---|
+| Tool-calling reliability | ★★★★★ |
+| Instruction following | ★★★★★ |
+| RAG / grounded answering | ★★★★★ |
+| Latency | ★★★★☆ |
+| Structured output | ★★★★☆ |
+| Context handling | ★★★★☆ |
+| Privacy/security | ★★★★★ |
+| Cost | ★★★★☆ |
+| Raw advanced reasoning | ★★★☆☆ |
+| Multimodal capability | ★☆☆☆☆ |
+
+Privacy/security scores highest because it matters most for a real HR production system: every tool takes its employee ID from the session, never as a model-supplied argument (see "Tools" below), so there's no prompt-level trust in the LLM to get another employee's data right or wrong.
+
 ### Tools
 
 | Tool | Purpose | Reads from |
@@ -93,8 +126,9 @@ Each choice below names what that tool specializes in relative to its alternativ
 | `check_leave_eligibility` | Combines employment status, balance and working-day count into one eligibility verdict | SQLite |
 | `check_wfh_eligibility` | Tenure-based work-from-home/hybrid eligibility verdict, plus the day quota | SQLite |
 | `check_loan_eligibility` | Combines tenure, CTC cap, active-loan and repayment-gap checks into one staff-loan eligibility verdict | SQLite |
+| `submit_leave_request` | Submits a leave request, auto-approved and the balance deducted immediately once the employee explicitly confirms | SQLite |
 
-Every tool takes its employee ID from the session, never as a model-supplied argument - the model has no parameter through which it could ask for another employee's data.
+Every tool takes its employee ID from the session, never as a model-supplied argument - the model has no parameter through which it could ask for another employee's data. `submit_leave_request` is the only tool that writes rather than reads: it takes a `confirmed` argument the model may only set to `true` after the employee has explicitly confirmed the exact request in chat - never on the first ask.
 
 ### Implementation approach
 
@@ -292,6 +326,7 @@ node index.js "What is the earned leave carry forward and encashment rule?" # si
 node index.js "How many working days are there from 2026-10-12 to 2026-10-16?" # single-shot: date calculation
 node index.js "I want to take casual leave from 2026-10-12 to 2026-10-16, do I have enough balance and what's the CL policy?" # single-shot: multiple tools, multi-tool reasoning
 node index.js "Am I eligible for a staff loan, and can I work from home?"        # single-shot: the 2 newest tools, check_loan_eligibility + check_wfh_eligibility
+node index.js                                                    # interactive mode, then: "I'd like to take casual leave from 2026-10-12 to 2026-10-13" -> agent states the exact request and asks you to confirm -> reply "yes" -> submit_leave_request runs, balance deducted immediately (single-shot mode can only show the confirmation ask, not the follow-up "yes")
 node index.js --as=EMP002 --password=vikram123 "What is my leave balance?" # single-shot, as a different employee
 node index.js --as=EMP001 --password=asha123 "What is EMP002's leave balance?" # single-shot: blocked cross-employee access
 ```
@@ -339,13 +374,13 @@ docker compose up --build
 
 This is also the deployment artifact for a real VPS (DigitalOcean, Hetzner, Lightsail, or similar) - copy the repo and a real `.env` over, run the same command. The one thing to change for a real deployment is `docker-compose.yml`'s `client` build arg `VITE_API_URL` - it's baked in at build time, so it needs the server's real public URL instead of `localhost`. SQLite and Chroma both persist in named Docker volumes, so data survives restarts here (unlike the Render path below).
 
-**Render Blueprint** - a genuinely free, no-VPS-cost alternative (`render.yaml`, also provisions all 3 services): sign up at [render.com](https://render.com), "New" -> "Blueprint", point it at this repo. Render reads `render.yaml` and prompts for `GOOGLE_API_KEY`/`JWT_SECRET` during setup. This is a first-pass config, not live-verified against Render's current schema - if a field doesn't match what Render's UI expects, the fallback is creating the 3 services manually ("New Web Service" / "New Static Site") using the same build/start commands the file specifies. Free-tier caveat: the two web services (Chroma, the API) spin down after 15 minutes idle and take ~30-60s to cold-start on the next request; SQLite and Chroma's data reset to the seeded demo state on restart (no real data to lose - fine for a demo, not for production).
+**Render Blueprint** - a genuinely free, no-VPS-cost alternative (`render.yaml`, also provisions all 3 services): sign up at [render.com](https://render.com), "New" -> "Blueprint", point it at this repo. Render reads `render.yaml` and prompts for `GOOGLE_API_KEY`/`JWT_SECRET` during setup. Chroma runs on Render's native Python runtime (`runtime: python`, `pip install chromadb`, then its own `chroma run` CLI) rather than its official Docker image - a `runtime: image` service hit Render's "Payment Information Required" error (it requires a paid instance type), while every native runtime (Node, Python, static) is free-tier eligible; `plan: free` is pinned on all 3 services so none silently default to paid again. Verified locally before committing: installed `chromadb` via pip in a scratch venv, confirmed `chroma run`'s flags match, and got a 200 heartbeat from it. Free-tier caveat: the two web services (Chroma, the API) spin down after 15 minutes idle and take ~30-60s to cold-start on the next request; SQLite and Chroma's data reset to the seeded demo state on restart (no real data to lose - fine for a demo, not for production).
 
 Other Docker-Compose-capable hosts (Railway, Fly.io, any VPS provider) work the same way as the VPS path above, since `docker-compose.yml` is the portable piece.
 
 ## Known limitations (next steps)
 
-- No tool reads `leave_history` yet (a future eligibility refinement).
+- `submit_leave_request` writes approved requests into `leave_history` and deducts the matching balance in one transaction, but no tool reads history back yet for a quarter-based eligibility refinement (e.g. "has this employee already taken EL this quarter").
 - `check_wfh_eligibility` only checks the tenure gate - actual WFH day usage isn't tracked anywhere, so the day quota is returned as policy text, not computed against a real count.
 - Passwords (CLI and web) are a plaintext demo credential, not hashed - a deliberate scope call for this project, not an oversight - a stand-in credential scheme demonstrating the session architecture, not a production authentication system.
 - Neither the interactive CLI chat's history nor the server's per-employee conversation history is ever trimmed, so a very long session keeps growing the prompt sent to the model each turn. Fine for a demo; a real system would need to cap or summarize it.
