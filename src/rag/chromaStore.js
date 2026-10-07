@@ -13,10 +13,14 @@ const CHROMA_URL = process.env.CHROMA_URL ?? "http://localhost:8000";
 const COLLECTION_NAME = "hr-policies";
 
 const { hostname, port, protocol } = new URL(CHROMA_URL);
+const ssl = protocol === "https:";
+// A URL with no explicit port (e.g. Render's public https://..., which
+// implies 443) leaves `port` as "" - Number("") is 0, not NaN, so this
+// silently tried to connect on port 0 without the fallback below.
 const client = new ChromaClient({
   host: hostname,
-  port: Number(port),
-  ssl: protocol === "https:",
+  port: port ? Number(port) : ssl ? 443 : 80,
+  ssl,
 });
 
 // We always pass precomputed embeddings ourselves (see index.js/addChunks
