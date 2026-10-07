@@ -20,25 +20,20 @@ flowchart TB
     end
 
     subgraph Backend["Application Tier - Node.js"]
-        direction TB
         Entry["Entry Points"]
         Auth["Auth and Session"]
         Presentation["Presentation"]
-        Orchestration["Agent Orchestration
-LangGraph agent loop"]
-        Business["Business Logic
-8 HR Tools"]
+        Orchestration["Agent Orchestration<br/>LangGraph agent loop"]
+        Business["Business Logic<br/>9 HR Tools"]
         DataAccess["Data Access"]
     end
 
     subgraph DataTier["Data Tier"]
         SQLite[("SQLite")]
-        Chroma[("Chroma
-RAG Vector Store")]
+        Chroma[("Chroma<br/>RAG Vector Store")]
     end
 
-    Gemini["Google Gemini
-LLM and Embeddings"]
+    Gemini["Google Gemini<br/>LLM and Embeddings"]
 
     Terminal --> Entry
     Browser -- "login - HTTPS plus JWT" --> Entry
