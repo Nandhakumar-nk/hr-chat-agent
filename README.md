@@ -28,12 +28,12 @@ flowchart TB
         DataAccess["Data Access"]
     end
 
-    subgraph DataTier["Data Tier"]
-        SQLite[("SQLite")]
-        Chroma[("Chroma<br/>RAG Vector Store")]
-    end
-
     Gemini["Google Gemini<br/>LLM and Embeddings"]
+
+    subgraph DataTier["Data Tier"]
+        Chroma[("Chroma<br/>RAG Vector Store")]
+        SQLite[("SQLite")]
+    end
 
     Terminal --> Entry
     Browser -- "login - HTTPS plus JWT" --> Entry
