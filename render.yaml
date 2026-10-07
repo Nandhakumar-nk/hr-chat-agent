@@ -11,20 +11,26 @@
 #
 # Free-tier caveat: the 2 web services (chroma, api) spin down after 15
 # minutes idle and take ~30-60s to cold-start on the next request.
+#
+# Chroma runs via Render's native Python runtime (pip install chromadb,
+# then its own `chroma run` CLI) rather than the official Docker image -
+# a Docker-image service requires a paid instance type on Render, while
+# every native runtime (Node, Python, static) is free-tier eligible.
+# `plan: free` is pinned explicitly on all 3 services below so none of
+# them silently default to a paid instance type again.
 
 services:
   - type: web
     name: hr-chat-agent-chroma
-    runtime: image
-    image:
-      url: docker.io/chromadb/chroma:latest
-    envVars:
-      - key: PORT
-        value: 8000
+    runtime: python
+    plan: free
+    buildCommand: pip install chromadb
+    startCommand: chroma run --host 0.0.0.0 --port $PORT --path ./chroma_data
 
   - type: web
     name: hr-chat-agent-api
     runtime: node
+    plan: free
     buildCommand: npm install
     startCommand: node server.js
     envVars:
