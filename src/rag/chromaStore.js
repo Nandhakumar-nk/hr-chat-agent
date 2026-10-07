@@ -9,7 +9,13 @@ import { ChromaClient } from "chromadb";
 
 import { embedDocuments } from "./embeddings.js";
 
-const CHROMA_URL = process.env.CHROMA_URL ?? "http://localhost:8000";
+// Render's `fromService` "hostport" property (used in render.yaml) yields a
+// bare "host:port" with no scheme, which `new URL()` below can't parse -
+// normalize it rather than assuming every CHROMA_URL already has one.
+const RAW_CHROMA_URL = process.env.CHROMA_URL ?? "http://localhost:8000";
+const CHROMA_URL = /^https?:\/\//.test(RAW_CHROMA_URL)
+  ? RAW_CHROMA_URL
+  : `http://${RAW_CHROMA_URL}`;
 const COLLECTION_NAME = "hr-policies";
 
 const { hostname, port, protocol } = new URL(CHROMA_URL);
