@@ -55,19 +55,6 @@ LLM and Embeddings"]
     Orchestration -- "8 final answer" --> Presentation
 ```
 
-Three tiers: the **Client Tier** (the CLI terminal and the React browser UI, both just different ways to reach the same backend), the **Application Tier** (a Node.js process - `server.js` for the web API or `index.js` for the CLI - layered top to bottom: entry point, auth/session, presentation, agent orchestration, business logic, data access, each layer only talking to the one below it), and the **Data Tier** (SQLite for structured HR data, Chroma for the policy document's vector embeddings), with Google Gemini as the one external service for both the chat model and embeddings. The login path (Terminal/Browser through Entry Points, Auth and Session, to Presentation) happens once per session; the numbered edges (1-8) are the turn-by-turn loop that repeats for every question.
-
-| Diagram node | Real file(s) |
-|---|---|
-| Entry Points | `server.js`, `index.js` |
-| Auth and Session | `src/session.js`, `src/server/auth.js` |
-| Presentation | `src/server/routes.js`, `src/chat.js` |
-| Agent Orchestration | `src/agent.js` |
-| Business Logic | `src/tools/index.js` |
-| Data Access | `src/db/repository.js`, `src/rag/index.js` |
-
-The numbered edges are not incidental - they are the actual order of execution for one turn, including the loop. Take a policy question like "how many days of earned leave carry forward to next year?": (1) Presentation sends the question to Orchestration, which (2) asks Gemini. Gemini's reply comes back as (3) `tool_calls or answer` - here, a call to `search_hr_policy` - so Orchestration sends (4) `run tool` into Business Logic, which (5) calls Data Access. Data Access (6a) retrieves against Chroma, embedding the query via Gemini first, or (6b) reads SQLite directly, depending on which tool ran. The result returns as (7) a dotted `tool result` loop back to Orchestration - which may repeat from (2), asking Gemini again, if the question needs another tool (the same LangGraph cycle step 6's `check_leave_eligibility` relies on when it needs balance, policy and date-calculation results together). Only once the model stops requesting tools does Orchestration send (8) the final answer back to Presentation, citing the policy page.
-
 At a higher level, the LLM's actual job in this architecture is narrower than it might first appear - employee data, policy retrieval and date/eligibility math are each delegated to a dedicated subsystem, leaving the model to understand the question and orchestrate between them:
 
 ```text
@@ -81,6 +68,19 @@ At a higher level, the LLM's actual job in this architecture is narrower than it
          ↓            ↓             ↓
        Facts        Policy      Calculations
 ```
+
+Three tiers: the **Client Tier** (the CLI terminal and the React browser UI, both just different ways to reach the same backend), the **Application Tier** (a Node.js process - `server.js` for the web API or `index.js` for the CLI - layered top to bottom: entry point, auth/session, presentation, agent orchestration, business logic, data access, each layer only talking to the one below it), and the **Data Tier** (SQLite for structured HR data, Chroma for the policy document's vector embeddings), with Google Gemini as the one external service for both the chat model and embeddings. The login path (Terminal/Browser through Entry Points, Auth and Session, to Presentation) happens once per session; the numbered edges (1-8) are the turn-by-turn loop that repeats for every question.
+
+| Diagram node | Real file(s) |
+|---|---|
+| Entry Points | `server.js`, `index.js` |
+| Auth and Session | `src/session.js`, `src/server/auth.js` |
+| Presentation | `src/server/routes.js`, `src/chat.js` |
+| Agent Orchestration | `src/agent.js` |
+| Business Logic | `src/tools/index.js` |
+| Data Access | `src/db/repository.js`, `src/rag/index.js` |
+
+The numbered edges are not incidental - they are the actual order of execution for one turn, including the loop. Take a policy question like "how many days of earned leave carry forward to next year?": (1) Presentation sends the question to Orchestration, which (2) asks Gemini. Gemini's reply comes back as (3) `tool_calls or answer` - here, a call to `search_hr_policy` - so Orchestration sends (4) `run tool` into Business Logic, which (5) calls Data Access. Data Access (6a) retrieves against Chroma, embedding the query via Gemini first, or (6b) reads SQLite directly, depending on which tool ran. The result returns as (7) a dotted `tool result` loop back to Orchestration - which may repeat from (2), asking Gemini again, if the question needs another tool (the same LangGraph cycle step 6's `check_leave_eligibility` relies on when it needs balance, policy and date-calculation results together). Only once the model stops requesting tools does Orchestration send (8) the final answer back to Presentation, citing the policy page.
 
 ### Framework choices
 
