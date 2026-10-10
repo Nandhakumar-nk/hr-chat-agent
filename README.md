@@ -328,6 +328,16 @@ Authentication and authorization were already structurally guaranteed by step 7/
 
 7 of 8 passed before the change; the fabricated-prior-confirmation injection (row 7) genuinely bypassed the confirm-before-write rule in the baseline prompt - verified by checking `leave_history`/`leave_balances` directly, which showed a real write (an approved EL row plus a 2-day balance deduction) that had to be reverted by hand. All 8 passed after adding the guardrail rule block, re-verified the same way (no DB write for the same prompt).
 
+Steps 11-13 below move past the graded assessment (steps 1-10) into further "standard agentic layers," picked up as a learning exercise once the assessment itself was complete.
+
+## Step 11: observability / tracing
+
+Until now, the only record of what the agent did was `console.log` output and the in-memory `toolActivity` the step 8 UI panel reads for one turn - nothing durable, nothing queryable after the fact. A new `agent_traces` table (`src/db/schema.sql`) gives every turn a permanent row: `employee_id`, `started_at`, `user_message`, `final_answer`, `tool_calls` (the same `{name, args, result}` JSON shape `toolActivity` already uses), `total_tokens`, and `latency_ms`. `recordTrace(...)` (`src/db/repository.js`) inserts it, called once per turn from `runAgentTurn` (`src/agent.js`), which now also times the turn and sums token usage across every `AIMessage` the turn produced - a turn can loop through the `agent` node more than once if the model calls tools, gets results, and decides to call more, so summing only the last response would undercount.
+
+No new dependency, no separate tracing service (e.g. LangSmith) - this is plain SQLite, the same data layer and `db.prepare(...).run(...)` pattern every other write in this project already uses.
+
+**Tested behavior**: a single-tool question (`get_leave_balance`) produced one `agent_traces` row with `total_tokens: 3855`; a compound question asking for both the leave balance and a working-day count in one message produced a tool_calls array with both `get_leave_balance` and `calculate_leave_days` and a correspondingly higher `total_tokens: 4155` - confirmed by querying the table directly, not by assuming the code was right. No UI work in this step; a dedicated trace-history view is a reasonable future idea, not built now.
+
 ## Setup
 
 ```bash

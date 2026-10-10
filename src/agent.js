@@ -18,6 +18,8 @@ import { ToolMessage } from "@langchain/core/messages";
 import { StateGraph, MessagesAnnotation, Annotation, START, END } from "@langchain/langgraph";
 
 import { toolsByName } from "./tools/index.js";
+import { recordTrace } from "./db/repository.js";
+import { getCurrentEmployeeId } from "./session.js";
 
 const model = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
@@ -170,6 +172,15 @@ const graph = new StateGraph(AgentState)
 // callers that want to show them (the step 8 API/UI) - the CLI ignores it.
 export async function runAgentTurn(messages) {
   console.log("messages context:", messages);
+
+  // Step 11 (observability): captured before the graph runs, so the
+  // trace recorded below covers exactly this turn - the new messages
+  // (tool calls, intermediate AI turns, final answer) and nothing from
+  // earlier turns already sitting in `messages`.
+  const startedAt = new Date().toISOString();
+  const turnStart = Date.now();
+  const inputLength = messages.length;
+
   const result = await graph.invoke({ messages });
 
   // The graph starts its internal state from `messages` and appends
@@ -180,5 +191,26 @@ export async function runAgentTurn(messages) {
   messages.length = 0;
   messages.push(...result.messages);
 
-  return { message: messages.at(-1), toolActivity: result.toolActivity };
+  const finalMessage = messages.at(-1);
+
+  // A turn can loop through the "agent" node more than once (one round
+  // per tool call), so token usage is summed across every new AIMessage,
+  // not just the last one.
+  const newMessages = result.messages.slice(inputLength);
+  const totalTokens = newMessages.reduce(
+    (sum, m) => sum + (m.response_metadata?.tokenUsage?.totalTokens ?? 0),
+    0
+  ) || null;
+
+  recordTrace({
+    employeeId: getCurrentEmployeeId(),
+    startedAt,
+    userMessage: String(messages[inputLength - 1]?.content ?? ""),
+    finalAnswer: finalMessage.text,
+    toolCalls: result.toolActivity,
+    totalTokens,
+    latencyMs: Date.now() - turnStart,
+  });
+
+  return { message: finalMessage, toolActivity: result.toolActivity };
 }

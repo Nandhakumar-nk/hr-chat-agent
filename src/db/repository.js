@@ -55,6 +55,16 @@ export function recordApprovedLeave(employeeId, leaveType, startDate, endDate, b
   }
 }
 
+// Step 11: one durable row per agent turn, for observability - what
+// console.log used to be the only record of. Called once per turn from
+// runAgentTurn (src/agent.js), after the graph finishes.
+export function recordTrace({ employeeId, startedAt, userMessage, finalAnswer, toolCalls, totalTokens, latencyMs }) {
+  db.prepare(
+    `INSERT INTO agent_traces (employee_id, started_at, user_message, final_answer, tool_calls, total_tokens, latency_ms)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(employeeId, startedAt, userMessage, finalAnswer, JSON.stringify(toolCalls), totalTokens ?? null, latencyMs);
+}
+
 export function getActiveLoan(employeeId) {
   return (
     db

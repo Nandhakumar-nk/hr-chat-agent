@@ -48,3 +48,18 @@ CREATE TABLE IF NOT EXISTS loans (
   closed_date TEXT,             -- 'YYYY-MM-DD', NULL while still active
   status TEXT NOT NULL          -- 'active' | 'closed'
 );
+
+-- Step 11: one durable, queryable row per agent turn - what console.log
+-- showed in the terminal until now, made persistent instead of
+-- ephemeral. tool_calls is a JSON array, same {name, args, result} shape
+-- as the toolActivity the step 8 UI panel already renders for one turn.
+CREATE TABLE IF NOT EXISTS agent_traces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id TEXT NOT NULL REFERENCES employees(id),
+  started_at TEXT NOT NULL,   -- ISO timestamp
+  user_message TEXT NOT NULL,
+  final_answer TEXT NOT NULL,
+  tool_calls TEXT NOT NULL,   -- JSON array
+  total_tokens INTEGER,       -- NULL if the model response didn't report usage
+  latency_ms INTEGER NOT NULL
+);
