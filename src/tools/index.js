@@ -73,6 +73,36 @@ function countWorkingDays(startDate, endDate) {
   return workingDays;
 }
 
+// Shared by calculate_leave_days, check_leave_eligibility and
+// submit_leave_request: rejects a bad date range before it ever reaches
+// countWorkingDays, which otherwise fails silently - a reversed range
+// (end before start) just never enters its loop, returning 0 working
+// days instead of flagging the input as wrong (e.g. "Oct 20 to Oct 10").
+function validateDateRange(startDate, endDate) {
+  const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!isoDatePattern.test(startDate) || !isoDatePattern.test(endDate)) {
+    return {
+      valid: false,
+      error: `Dates must be in YYYY-MM-DD format - got startDate="${startDate}", endDate="${endDate}".`,
+    };
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { valid: false, error: `startDate="${startDate}" or endDate="${endDate}" is not a real calendar date.` };
+  }
+
+  if (end < start) {
+    return {
+      valid: false,
+      error: `endDate (${endDate}) is before startDate (${startDate}) - the date range is reversed.`,
+    };
+  }
+
+  return { valid: true };
+}
+
 // Shared by check_wfh_eligibility and check_loan_eligibility: completed
 // years of tenure from date_of_joining to today.
 function tenureYears(dateOfJoining) {
@@ -89,6 +119,11 @@ function tenureYears(dateOfJoining) {
 const calculateLeaveDaysTool = tool(
   async ({ startDate, endDate }) => {
     console.log("\n🛠 calculate_leave_days tool executed");
+
+    const validation = validateDateRange(startDate, endDate);
+    if (!validation.valid) {
+      return JSON.stringify({ error: validation.error });
+    }
 
     const workingDays = countWorkingDays(startDate, endDate);
 
@@ -195,6 +230,11 @@ const LEAVE_TYPE_TO_BALANCE_FIELD = {
 // depth guard against a confirmed-but-actually-ineligible request (the
 // model skipped the check, or the balance changed between turns).
 function evaluateLeaveEligibility(employeeId, leaveType, startDate, endDate) {
+  const validation = validateDateRange(startDate, endDate);
+  if (!validation.valid) {
+    return { error: validation.error };
+  }
+
   const employee = getEmployee(employeeId);
   if (!employee) {
     return { error: `No employee found with id ${employeeId}` };
