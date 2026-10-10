@@ -13,6 +13,24 @@ import { POLICY_DOCUMENTS } from "../rag/index.js";
 
 export const router = Router();
 
+// Step 12 (guardrails): a simple in-memory per-employee rate limit on
+// /api/chat - same Map-per-employee pattern as conversations.js's chat
+// history. Caps requests before any LLM call or DB write happens, so a
+// flood of requests from one employee can't run up API cost or spam
+// writes; other employees are unaffected (their own timestamps live
+// under their own key).
+const CHAT_RATE_LIMIT = 10; // requests
+const CHAT_RATE_WINDOW_MS = 60_000; // per rolling window, per employee
+const chatRequestLog = new Map(); // employeeId -> recent request timestamps
+
+function isRateLimited(employeeId) {
+  const now = Date.now();
+  const recent = (chatRequestLog.get(employeeId) ?? []).filter((t) => now - t < CHAT_RATE_WINDOW_MS);
+  recent.push(now);
+  chatRequestLog.set(employeeId, recent);
+  return recent.length > CHAT_RATE_LIMIT;
+}
+
 router.post("/login", (req, res) => {
   const { employeeId, password } = req.body ?? {};
 
@@ -90,12 +108,19 @@ router.get("/policies", requireAuth, (req, res) => {
 });
 
 router.post("/chat", requireAuth, async (req, res) => {
+  const employeeId = getCurrentEmployeeId();
+  if (isRateLimited(employeeId)) {
+    return res.status(429).json({
+      error: `Too many requests - limit is ${CHAT_RATE_LIMIT} per minute. Please wait and try again.`,
+    });
+  }
+
   const { message } = req.body ?? {};
   if (!message || typeof message !== "string") {
     return res.status(400).json({ error: "Expected a non-empty 'message' string." });
   }
 
-  const messages = getConversation(getCurrentEmployeeId());
+  const messages = getConversation(employeeId);
   messages.push({ role: "user", content: message });
 
   try {

@@ -338,6 +338,20 @@ No new dependency, no separate tracing service (e.g. LangSmith) - this is plain 
 
 **Tested behavior**: a single-tool question (`get_leave_balance`) produced one `agent_traces` row with `total_tokens: 3855`; a compound question asking for both the leave balance and a working-day count in one message produced a tool_calls array with both `get_leave_balance` and `calculate_leave_days` and a correspondingly higher `total_tokens: 4155` - confirmed by querying the table directly, not by assuming the code was right. No UI work in this step; a dedicated trace-history view is a reasonable future idea, not built now.
 
+## Step 12: guardrail additions (PII, rate limiting, Gemini's native content filtering)
+
+Picking up the two items explicitly deferred from Step 10, plus one found while deciding how to approach them.
+
+**PII audit** (verification, not new code): grepped every one of the 9 tools in `src/tools/index.js` for `password` or a raw-row spread (`...employee`, `...balance`) - zero matches. Every tool builds its JSON output by naming fields explicitly, never by forwarding a raw database row, so `employees.password` structurally cannot leak through any tool, now or if a future tool is added carelessly. `check_loan_eligibility` does return `ctc`, but only ever about the logged-in employee's own record (never another employee's) - this project's schema has no richer PII (no SSN, address, phone) to mask beyond that.
+
+**Rate limiting**: a small in-memory per-employee limiter on `/api/chat` (`src/server/routes.js`) - the same `Map` keyed by `employeeId` pattern `conversations.js` already uses for chat history - capping requests at 10/minute per employee before any LLM call or DB write happens. No `express-rate-limit` dependency, matching this project's "plain code over a package" convention.
+
+**Gemini's native content-safety filtering**: `ChatGoogleGenerativeAI` (`@langchain/google-genai`, already a direct dependency) accepts a `safetySettings` array - a real guardrail "framework," just Google's first-party one rather than a third-party package. The usual Python-only guardrail frameworks (Guardrails AI, NeMo Guardrails, LLM Guard) have no JS/TS SDK, so they don't fit this stack without running a separate Python service - not worth it for this layer. `src/agent.js` sets harassment/hate-speech/dangerous-content/sexually-explicit categories to `BLOCK_MEDIUM_AND_ABOVE`, as plain string literals rather than an imported enum (the enum lives in `@google/generative-ai`, only a *transitive* dependency today, and this is a `.js` file with no compiler to benefit from its typing).
+
+**Tested behavior**:
+- Rate limiting: fired 12 rapid `/api/chat` requests as one employee - the first 10 returned `200`, the 11th and 12th correctly returned `429`. A second employee's request in the same window returned `200`, confirming the limit is per-employee, not global.
+- Content safety: confirmed `safetySettings` is live - every model response's `response_metadata.safetyRatings` now reports a score per configured category, which only appears when safety checking is active. Honestly reported: a deliberately harassing test message to the agent was *not* blocked at `BLOCK_MEDIUM_AND_ABOVE` - Gemini's classifier scored it below the harassment threshold for a message directed at the bot itself (as opposed to hate speech or content targeting a protected group). A separate direct test with a clearly severe prompt (requesting violent content against an ethnic group) was declined by the model's own alignment training before the configured threshold was ever the deciding factor. Net effect: the setting is verified correctly wired and active, but isolating it as the *specific* reason a response was blocked - rather than the model's own training - didn't reproduce in testing, and manufacturing a prompt severe enough to isolate it further wasn't worth pursuing.
+
 ## Setup
 
 ```bash

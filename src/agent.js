@@ -21,8 +21,29 @@ import { toolsByName } from "./tools/index.js";
 import { recordTrace } from "./db/repository.js";
 import { getCurrentEmployeeId } from "./session.js";
 
+// Step 12 (guardrails): Gemini's own first-party content-safety
+// filtering - enforced by Google's API itself, a different enforcement
+// point than anything in SYSTEM_PROMPT below (which only guides what the
+// model chooses to do; this blocks certain content before a response is
+// even returned). Category/threshold values are plain strings, not an
+// imported enum - @google/generative-ai defines HarmCategory/
+// HarmBlockThreshold, but it's only a transitive dependency of
+// @langchain/google-genai today, and this is a .js file (no compiler to
+// benefit from the enum's typing), so adding it as a direct dependency
+// just to import two constants isn't worth it. BLOCK_MEDIUM_AND_ABOVE is
+// a middle ground - not BLOCK_NONE (no protection) or
+// BLOCK_LOW_AND_ABOVE (overly aggressive for an internal HR tool's
+// ordinary vocabulary).
+const safetySettings = [
+  "HARM_CATEGORY_HARASSMENT",
+  "HARM_CATEGORY_HATE_SPEECH",
+  "HARM_CATEGORY_DANGEROUS_CONTENT",
+  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+].map((category) => ({ category, threshold: "BLOCK_MEDIUM_AND_ABOVE" }));
+
 const model = new ChatGoogleGenerativeAI({
   model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
+  safetySettings,
 });
 
 const modelWithTools = model.bindTools(Object.values(toolsByName));
